@@ -1,0 +1,12 @@
+[manifest]
+version = "1.0.0"
+dump_lua = true
+priority = 1
+
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+position = "before"
+pattern = 'self:set_ability(center, true)'
+match_indent = true
+payload = 'if self.params.infinifusion then self.infinifusion = self.params.infinifusion end'
