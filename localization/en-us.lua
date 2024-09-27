@@ -5,8 +5,12 @@ return {
 				name = 'InfiniFusion',
 				text = {
 					'A fusion of',
-					'multiple {C:attention}Jokers{}'
+					'{C:attention}multiple{} Jokers'
 				}
+			},
+			j_misprint_static = {
+				name = 'Misprint',
+				text = {"{C:red}#1#"}
 			}
 		},
 		Spectral = {

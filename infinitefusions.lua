@@ -4,6 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, Joey J. Jester]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
+--- VERSION: 0.0.1
 
 -- using a placeholder sprite by Joey J. Jester
 -- known fusion issues:
@@ -91,11 +92,11 @@ SMODS.Joker {
 				card.config.center = G.P_CENTERS[key]
 				loc_vars = G.P_CENTERS[key].loc_vars(G.P_CENTERS[key], faux_info_queue, card)
 			else
-				loc_vars.vars, loc_vars.key = infinifusion_vanilla_loc_var(card.infinifusion[i])
+				loc_vars.vars = infinifusion_vanilla_loc_var(card.infinifusion[i])
+				loc_vars.key = card.infinifusion[i].key == 'j_misprint' and 'j_misprint_static' or nil
 			end
 			
-			if loc_vars.key and type(loc_vars) == 'string' then key = loc_vars.key end
-			info_queue[#info_queue+1] = {key = key, set = set, specific_vars = loc_vars.vars}
+			info_queue[#info_queue+1] = {key = loc_vars.key or key, set = set, specific_vars = loc_vars.vars}
 		end
 		
 		card.ability = card.ability_placeholder
@@ -229,19 +230,16 @@ function infinifusion_vanilla_loc_var(self)
 		return {self.ability.x_mult}
 	
 	elseif self.key == 'j_misprint' then
-		if not G.localization.descriptions.Joker.j_misprint_static then
-			G.localization.descriptions.Joker.j_misprint_static = {
-				name = G.localization.descriptions.Joker.j_misprint.name,
-				text = {'{C:red}#1#'},
-				name_parsed = loc_parse_string(G.localization.descriptions.Joker.j_misprint.name),
-				text_parsed = {}
-			}
-			for i = 1, #G.localization.descriptions.Joker.j_misprint_static.text do
-				G.localization.descriptions.Joker.j_misprint_static.text_parsed[i] = 
-					loc_parse_string(G.localization.descriptions.Joker.j_misprint_static.text[i])
-			end
+		G.localization.descriptions.Joker.j_misprint_static.name =  G.localization.descriptions.Joker.j_misprint.name
+		G.localization.descriptions.Joker.j_misprint_static.name_parsed =  G.localization.descriptions.Joker.j_misprint.name_parsed
+		
+		local foresight = "#@"
+		if G.deck and G.deck.cards[1] then
+			foresight = foresight..tostring(G.deck.cards[#G.deck.cards].base.id)..tostring(G.deck.cards[#G.deck.cards].base.suit:sub(1,1))
+		else
+			foresight = foresight.."11D"
 		end
-		return {tostring("#@"..G.deck and G.deck.cards[1] and G.deck.cards[#G.deck.cards].base.id or 11 ..G.deck and G.deck.cards[1] and G.deck.cards[#G.deck.cards].base.suit:sub(1,1) or 'D')}, 'j_misprint_static'
+		return {foresight}
 	
 	elseif self.key == 'j_mystic_summit' then
 		return {self.ability.extra.mult, self.ability.extra.d_remaining}
