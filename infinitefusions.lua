@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, Joey J. Jester]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.1
+--- VERSION: 0.0.2
 
 -- using a placeholder sprite by Joey J. Jester
 
