@@ -43,9 +43,10 @@ SMODS.Joker {
 		-- InfiniFusion API
 		if card.infinifusion_api then
 			local fus = card.infinifusion_api
-			if fus.atlas or fus.pos then
+			if (fus.atlas and G.ASSET_ATLAS[fus.atlas]) or fus.pos then
+				print('hello???')
 				atlas = G.ASSET_ATLAS[fus.atlas] or G.ASSET_ATLAS["Joker"]
-				pos = fus.pos or {x = 1, y = 1}
+				pos = fus.pos or {x = 0, y = 0}
 			end
 			
 			if not fus.soul_pos and not fus.soul_atlas then
