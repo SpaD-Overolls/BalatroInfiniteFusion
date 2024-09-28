@@ -7,15 +7,12 @@
 --- VERSION: 0.0.1
 
 -- using a placeholder sprite by Joey J. Jester
--- known fusion issues:
--- -- Sixth Sense doesnt destroy cards
--- -- Blueprint/Brainstorm call status on their target instead of themselves
+
 InfiniteFusion = SMODS.current_mod
 InfiniteFusion.badge_colour = HEX('de2323')
 
 SMODS.Joker {
 	key = 'fused',
-	discovered = true,
 	pos = {x = 9, y = 9},
 	soul_pos = {x = 5, y = 3},
 	omit = true,
@@ -34,10 +31,42 @@ SMODS.Joker {
 		card.config.center = G.P_CENTERS['j_infus_fused']
 	end,
 	set_sprites = function(self, card, front)
-		card.children.center.atlas = G.ASSET_ATLAS["Joker"]
-		card.children.center:set_sprite_pos(self.pos)
-		card.children.floating_sprite.atlas = G.ASSET_ATLAS["centers"]
-		card.children.floating_sprite:set_sprite_pos(self.soul_pos)
+		infinifusion_check_fusion(card)
+		local atlas = G.ASSET_ATLAS["Joker"]
+		local soul_atlas = G.ASSET_ATLAS["centers"]
+		local pos = self.pos
+		local soul_pos = self.soul_pos
+		local set_sprites = nil
+		
+		local has_soul = true
+		
+		-- InfiniFusion API
+		if card.infinifusion_api then
+			local fus = card.infinifusion_api
+			if fus.atlas or fus.pos then
+				atlas = G.ASSET_ATLAS[fus.atlas] or G.ASSET_ATLAS["Joker"]
+				pos = fus.pos or {x = 1, y = 1}
+			end
+			
+			if not fus.soul_pos and not fus.soul_atlas then
+				soul_pos = {x = -2, y = -2}
+				soul_atlas = G.ASSET_ATLAS["Joker"]
+			else
+				soul_pos = fus.soul_pos or {x = 1, y = 1}
+				soul_atlas = G.ASSET_ATLAS[fus.soul_atlas] or atlas
+			end
+			
+			if fus.set_sprites and type(fus.set_sprites) == 'function' then
+				set_sprites = fus.set_sprites
+			end
+		end
+		
+		card.children.center.atlas = atlas
+		card.children.center:set_sprite_pos(pos)
+		card.children.floating_sprite.atlas = soul_atlas
+		card.children.floating_sprite:set_sprite_pos(soul_pos)
+		
+		if set_sprites then set_sprites(card.infinifusion_api, card, front) end
 	end,
 	load = function(self, card, card_table, other_card)
 		calculate_infinijoker(card, function(i)
@@ -60,61 +89,197 @@ SMODS.Joker {
 		end)
 		card.added_to_deck = false
 	end,
-	in_pool = function(self)
-		return false -- shouldnt naturally spawn
-	end,
-	inject = function(self)
-		G.P_CENTERS[self.key] = self
-	end,
+	
 	update = function(self, card, dt)
 	end,
+	
 	calculate = function(self, card, context)
-		calculate_infinijoker(card, function(i)
-			card:calculate_joker(context)
-		end)
+		local global_ret = nil
+		local current_joker = nil
+		local restore_func = function(i)
+			if current_joker then
+				card.config.center = G.P_CENTERS[current_joker.key]
+				card.ability = current_joker.ability
+			end
+		end
+		
+		if not context.joker_retrigger then -- fusion mustn't retrigger itself
+			calculate_infinijoker(card, function(i)
+				local ret = card:calculate_joker(context)
+				-- sixth sense edgecase
+				if context.destroying_card and not context.blueprint then
+					global_ret = ret
+				end
+			end,
+			-- precalc_func
+			function(i)
+				if card.config.center ~= G.P_CENTERS['j_infus_fused'] and not current_joker then
+					current_joker = {
+						key = card.config.center.key,
+						ability = copy_table(card.ability)
+					}
+				end
+			end,
+			-- postcalc_func and finalcalc_func
+			restore_func(i), restore_func(i))
+		end
+		
+		if global_ret then return global_ret end
 	end,
+	
 	calc_dollar_bonus = function(self, card)
 		calculate_infinijoker(card, function(i)
 			card:calculate_dollar_bonus()
 		end)
 	end,
 	
+	-- non-calc functions
 	set_card_type_badge = function(self, card, badges)
+		if card.infinifusion_api then
+			local fus = card.infinifusion_api
+			if fus.set_card_type_badge and type(fus.set_card_type_badge) == 'function' then 
+				fus.set_card_type_badge(fus, card, badges)
+			end
+		end
 	end,
 	loc_vars = function(self, info_queue, card)
-		for i = 1, #card.infinifusion do
-			local key = card.infinifusion[i].key
-			local set = G.P_CENTERS[key].set
-			local loc_vars = {}
-			local faux_info_queue = {}
-			if G.P_CENTERS[key].loc_vars and type(G.P_CENTERS[key].loc_vars) == 'function' then
-				card.ability = copy_table(card.infinifusion[i].ability)
-				card.config.center = G.P_CENTERS[key]
-				loc_vars = G.P_CENTERS[key].loc_vars(G.P_CENTERS[key], faux_info_queue, card)
-			else
-				loc_vars.vars = infinifusion_vanilla_loc_var(card.infinifusion[i])
-				loc_vars.key = card.infinifusion[i].key == 'j_misprint' and 'j_misprint_static' or nil
+		local loc_vars = infinifusion_loc_vars(card)
+		local ret = {}
+		infinifusion_check_fusion(card)
+		
+		local show_info_queue = true
+		local api_info_queue = {}
+		-- InfiniFusion API
+		if card.infinifusion_api then
+			local fus = card.infinifusion_api
+			-- Hide infinifusion's subjoker info_queue
+			if fus.no_info_queue then show_info_queue = false end
+			
+			-- Custom loc_txt
+			if G.localization.descriptions.Joker[fus.key] then
+				-- Fix up missing name/description
+				if not G.localization.descriptions.Joker[fus.key].name then
+					G.localization.descriptions.Joker[fus.key].name = G.localization.descriptions.Joker["j_infus_fused"].name
+					G.localization.descriptions.Joker[fus.key].name_parsed = G.localization.descriptions.Joker["j_infus_fused"].name_parsed
+				end
+				
+				if not G.localization.descriptions.Joker[fus.key].text then
+					G.localization.descriptions.Joker[fus.key].text = G.localization.descriptions.Joker["j_infus_fused"].text
+					G.localization.descriptions.Joker[fus.key].text_parsed = G.localization.descriptions.Joker["j_infus_fused"].text_parsed
+				end
+				
+				-- set the ret key to the fusion's key
+				ret.key = fus.key
 			end
 			
-			info_queue[#info_queue+1] = {key = loc_vars.key or key, set = set, specific_vars = loc_vars.vars}
+			-- Custom loc_vars
+			if fus.loc_vars and type(fus.loc_vars) == 'function' then
+				local fus_vars = fus.loc_vars(fus, api_info_queue, card, loc_vars)
+				for k, v in pairs(fus_vars) do
+					ret[k] = v
+				end
+			end
+		end
+		-- Subjoker info_queue
+		if show_info_queue then
+			for i = 1, #loc_vars do
+				info_queue[#info_queue+1] = {key = loc_vars[i].key, set = loc_vars[i].set, specific_vars = loc_vars[i].vars}
+			end
+		end
+		
+		-- Fusion API info_queue (tacked on the end bcos subjokers are more important)
+		for i = 1, #api_info_queue do
+			info_queue[#info_queue+1] = api_info_queue[i]
 		end
 		
 		card.ability = card.ability_placeholder
 		card.config.center = G.P_CENTERS['j_infus_fused']
+		return ret
+	end,
+	in_pool = function(self)
+		return false -- shouldnt naturally spawn
+	end,
+	inject = function(self)
+		G.P_CENTERS[self.key] = self -- bypass normal injection (to not create a G.CENTER_POOLS.Joker entry)
 	end,
 }
 
-function calculate_infinijoker(card, calc_func)
-	for i = 1, #card.infinifusion do
-		card.ability = copy_table(card.infinifusion[i].ability)
-		card.config.center = G.P_CENTERS[card.infinifusion[i].key]
-		calc_func(i)
-		card.infinifusion[i].ability = copy_table(card.ability)
+-- [InfiniFusion API]
+-- This API is used to replace InfiniFusion's loc_txt/sprite
+-- with a custom one, with the intention to allow other mods
+-- to add their custom looks/names/descriptions to specific InfiniFusions
+
+SMODS.InfiniFusions = {}
+SMODS.InfiniFusion = SMODS.GameObject:extend {
+	obj_table = SMODS.InfiniFusions,
+	obj_buffer = {},
+	set = 'InfiniFusion',
+	class_prefix = 'if',
+	required_params = {
+		'key',
+		'contents' -- a table containing the keys of all jokers
+	},				-- that make up the fusion, in any order.
+	pre_inject_class = function(self)
+		G.INFINIFUSIONS = {}
+		G.INFINIFUSION_POOLS = {}
+	end,
+	inject = function(self)
+		if self.contents and type(self.contents) == 'table' and #self.contents >= 2 then
+			G.INFINIFUSIONS[self.key] = self		
+			if not G.INFINIFUSION_POOLS[#self.contents] then G.INFINIFUSION_POOLS[#self.contents] = {} end
+			table.insert(G.INFINIFUSION_POOLS[#self.contents], self)
+		else print("[Invalid Fusion] - "..self.key.." - self.contents must be a table of 2 or more elements") end
+	end,
+	process_loc_text = function(self)
+		if self.loc_txt then
+			-- doing process_loc_text as Joker because thats needed to use loc_vars' key
+			SMODS.process_loc_text(G.localization.descriptions.Joker, self.key, self.loc_txt)
+		end
+	end,
+}
+
+function infinifusion_find_fusion(contents)
+	if not contents then return nil end
+	if type(contents) ~= 'table' then return nil end
+	if #contents < 2 then return nil end
+	if not G.INFINIFUSION_POOLS[#contents] then return nil end
+	
+	for i = 1, #G.INFINIFUSION_POOLS[#contents] do
+		-- sort both tables in the same way
+		local my_contents = copy_table(contents)
+		table.sort(my_contents, function(a, b) return a:lower() < b:lower() end)
+		local their_contents = copy_table(G.INFINIFUSION_POOLS[#contents][i].contents)
+		table.sort(their_contents, function(a, b) return a:lower() < b:lower() end)
+		
+		local success = true
+		for ii = 1, #contents do -- check if they match up
+			if my_contents[ii] ~= their_contents[ii] then
+				success = nil
+				break
+			end
+		end
+		
+		if success then return G.INFINIFUSION_POOLS[#contents][i] end
 	end
 	
-	card.ability = card.ability_placeholder
-	card.config.center = G.P_CENTERS['j_infus_fused']
+	return nil
 end
+
+function infinifusion_check_fusion(card)
+	if not card.infinifusion_api_checked then
+		local contents = {}
+		for i = 1, #card.infinifusion do
+			contents[i] = card.infinifusion[i].key
+		end
+		local result = infinifusion_find_fusion(contents)
+		card.infinifusion_api = result
+		card.infinifusion_api_checked = true
+	end
+end
+
+-- [The Experiment]
+-- This is the Spectral card
+-- currently used to fuse Jokers
 
 SMODS.Atlas {
 	key = 'experiment',
@@ -143,6 +308,49 @@ SMODS.Consumable {
 	end
 }
 
+-- other functions --
+
+function calculate_infinijoker(card, calc_func, precalc_func, postcalc_func, finalcalc_func)
+	for i = 1, #card.infinifusion do
+		if precalc_func and type(precalc_func) == 'function' then precalc_func(i) end
+		card.ability = copy_table(card.infinifusion[i].ability)
+		card.config.center = G.P_CENTERS[card.infinifusion[i].key]
+		if calc_func and type(calc_func) == 'function' then calc_func(i) end
+		card.infinifusion[i].ability = copy_table(card.ability)
+		if postcalc_func and type(postcalc_func) == 'function' then postcalc_func(i) end
+	end
+	
+	card.ability = card.ability_placeholder
+	card.config.center = G.P_CENTERS['j_infus_fused']
+	if finalcalc_func and type(finalcalc_func) == 'function' then finalcalc_func(i) end
+end
+
+function infinifusion_loc_vars(card)
+	local ret = {}
+	for i = 1, #card.infinifusion do
+		local key = card.infinifusion[i].key
+		local set = G.P_CENTERS[key].set
+		local loc_vars = {}
+		local faux_info_queue = {}
+		
+		if G.P_CENTERS[key].loc_vars and type(G.P_CENTERS[key].loc_vars) == 'function' then
+			card.ability = copy_table(card.infinifusion[i].ability)
+			card.config.center = G.P_CENTERS[key]
+			loc_vars = G.P_CENTERS[key].loc_vars(G.P_CENTERS[key], faux_info_queue, card)
+		else
+			loc_vars.vars = infinifusion_vanilla_loc_var(card.infinifusion[i])
+			loc_vars.key = card.infinifusion[i].key == 'j_misprint' and 'j_misprint_static' or nil
+		end
+		
+		loc_vars.key = loc_vars.key or key
+		loc_vars.set = set
+		loc_vars.original_key = key
+		ret[#ret+1] = loc_vars
+	end
+	return ret
+end
+
+-- TODO: clean up
 function infinifusion_fuse_cards(cards)
 	cards = cards or {}
 	if not type(cards) == 'table' or #cards < 2 then return nil end
@@ -271,7 +479,7 @@ function infinifusion_vanilla_loc_var(self)
 	elseif self.key == 'j_blackboard' then
 		return {self.ability.extra, localize('Spades', 'suits_plural'), localize('Clubs', 'suits_plural')}
 	-- chip scalers
-	elseif self.key == 'j_runner' or self.key == 'j_ice_cream' or self.key == 'j_square' then
+	elseif self.key == 'j_runner' or self.key == 'j_ice_cream' or self.key == 'j_square' or self.key == 'j_wee' then
 		return {self.ability.extra.chips, self.ability.extra.chip_mod}
 	-- extra and x_mult
 	elseif self.key == 'j_constellation' or self.key == 'j_glass' or self.key == 'j_hit_the_road'
