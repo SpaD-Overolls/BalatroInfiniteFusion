@@ -577,7 +577,7 @@ function infinifusion_fuse_cards(cards)
 				infinifusion[#infinifusion+1] = card
 			end
 			
-			editions[#editions+1] = cards[i].edition.key
+			editions[#editions+1] = cards[i].edition and cards[i].edition.key
 			
 			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
 			func = function()
