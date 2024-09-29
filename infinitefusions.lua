@@ -32,6 +32,12 @@ SMODS.Joker {
 		
 		card.ability = card.ability_placeholder
 		infinifusion_init_ability(card)
+		
+		if card.infus_editions then
+			card:set_edition(pseudorandom_element(card.infus_editions, pseudoseed('fusion')), true, true)
+		end
+		card.params.infus_editions = nil
+		card.infus_editions = nil
 		card.config.center = G.P_CENTERS['j_infus_fused']
 	end,
 	set_sprites = function(self, card, front)
@@ -122,6 +128,11 @@ SMODS.Joker {
 				card.VT.h = card.T.h
 				card.VT.w = card.T.w
 				
+				-- TODO: Fix floating_sprite resize
+				-- square looks ok enough for me to not do this to it
+				if args.wee then
+					card.children.floating_sprite:set_sprite_pos({x = -2, y = -2})
+				end
 				
 				if args.same_check then
 					if args.square then
@@ -154,14 +165,15 @@ SMODS.Joker {
 		end)
 	end,
 	add_to_deck = function(self, card, from_debuff)
-		calculate_infinifusion(card, nil, function(i)
+		calculate_infinifusion(card, {no_edition = true}, function(i)
 			card.added_to_deck = nil
 			card:add_to_deck(from_debuff)
 		end)
+		
 		card.added_to_deck = true
 	end,
 	remove_from_deck = function(self, card, from_debuff)
-		calculate_infinifusion(card, nil, function(i)
+		calculate_infinifusion(card, {no_edition = true}, function(i)
 			card.added_to_deck = true
 			card:remove_from_deck(from_debuff)
 		end)
@@ -282,7 +294,7 @@ SMODS.Joker {
 	end,
 }
 
--- [InfiniFusion API]
+-- [InfiniFusion API Object]
 -- This API is used to replace InfiniFusion's loc_txt/sprite
 -- with a custom one, with the intention to allow other mods
 -- to add their custom looks/names/descriptions to specific InfiniFusions
@@ -390,6 +402,11 @@ SMODS.Consumable {
 
 function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc_func, finalcalc_func)
 	context = context or {}
+	if context.no_edition then
+		card.infus_editions = card.edition.key
+		card:set_edition(nil, true, true)
+	end
+	
 	for i = 1, #card.infinifusion do
 		if precalc_func and type(precalc_func) == 'function' then precalc_func(i) end
 		card.ability = copy_table(card.infinifusion[i].ability)
@@ -402,6 +419,11 @@ function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc
 	infinifusion_sync_ability(card)
 	card.ability = card.ability_placeholder
 	card.config.center = G.P_CENTERS['j_infus_fused']
+	
+	if context.no_edition then
+		card:set_edition(card.infus_editions, true, true)
+		card.infus_editions = nil
+	end
 	if finalcalc_func and type(finalcalc_func) == 'function' then finalcalc_func(i) end
 end
 
@@ -424,15 +446,24 @@ end
 
 function infinifusion_init_ability(card)
 	local keys = {'extra_value', 'perish_tally'}
+	local stickers = {}
+	local sticker_compats = {}
+	local final_sticker_compats = {}
 	local final_table = {}
-	for i = 1, #keys do
-		k = keys[i]
-		
+	
+	for k, v in pairs(SMODS.Stickers) do
+		stickers[#stickers+1] = v.key
+	end
+	
+	for i = 1, #keys + #stickers do
+		k = keys[i] or stickers[i-#keys]
 		for ii = 1, #card.infinifusion do
 			if card.infinifusion[ii].ability[k] then
-				if perish_tally then
+				if k == 'perish_tally' then
 					if not final_table[k] then final_table[k] = G.GAME.perishable_rounds end
 					final_table[k] = math.min(final_table[k] or G.GAME.perishable_rounds, card.infinifusion[ii].ability[k])
+				elseif type(card.infinifusion[ii].ability[k]) == 'boolean' and not card.infinifusion[ii].ability[k] == false then
+					final_table[k] = card.infinifusion[ii].ability[k]
 				else
 					if not final_table[k] then final_table[k] = 0 end
 					final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
@@ -445,6 +476,52 @@ function infinifusion_init_ability(card)
 		for i = 0, #card.infinifusion do
 			local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
 			tbl[k] = v
+		end
+	end
+	
+	for k, v in pairs(SMODS.Stickers) do
+		if final_table[v.key] then
+			sticker_compats[v.key] = {}
+			for i = 1, #card.infinifusion do
+				if v.should_apply and type(v.should_apply) == 'function' then
+					sticker_compats[v.key][i] = v:should_apply(card, G.P_CENTERS[card.infinifusion[i].key], G.jokers, true)
+				else
+					if v.key == 'etertnal' then
+						sticker_compats[v.key][i] = G.P_CENTERS[card.infinifusion[i].key].eternal_compat
+					elseif v.key == 'perishable' then
+						sticker_compats[v.key][i] = G.P_CENTERS[card.infinifusion[i].key].perishable_compat
+					else
+						sticker_compats[v.key][i] = true
+					end
+				end
+			end
+		end
+	end
+	
+	for k, v in pairs(sticker_compats) do
+		local compat = true
+		for i = 1, #card.infinifusion do
+			if v[i] ~= true then
+				compat = nil
+				break
+			end
+		end
+		if compat then
+			final_sticker_compats[k] = true
+		end
+	end
+	
+	if final_sticker_compats['eternal'] and final_sticker_compats['perishable'] then
+		local choice = {'eternal', 'perishable'}
+		final_sticker_compats[pseudorandom_element(choice, pseudoseed('fusion'))] = nil
+	end
+	
+	for k, v in pairs(SMODS.Stickers) do
+		if final_table[v.key] and not final_sticker_compats[v.key] then
+			for i = 0, #card.infinifusion do
+				local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
+				tbl[v.key] = nil
+			end
 		end
 	end
 	
@@ -486,6 +563,7 @@ function infinifusion_fuse_cards(cards)
 	G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
 	func = function()
 		local infinifusion = {}
+		local editions = {}
 		for i = 1, #cards do
 			if cards[i].config.center.key == 'j_infus_fused' then
 				for ii = 1, #cards[i].infinifusion do
@@ -498,6 +576,8 @@ function infinifusion_fuse_cards(cards)
 				infinifusion[#infinifusion+1] = card
 			end
 			
+			editions[#editions+1] = cards[i].edition.key
+			
 			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
 			func = function()
 				G.jokers:remove_card(cards[i])
@@ -507,7 +587,7 @@ function infinifusion_fuse_cards(cards)
 			return true; end})) 
 		end
 		
-		local new_fusion = Card(G.jokers.T.x + G.jokers.T.w/2, G.jokers.T.y, G.CARD_W, G.CARD_H, nil, G.P_CENTERS['j_infus_fused'],{bypass_discovery_center = true, infinifusion = infinifusion})
+		local new_fusion = Card(G.jokers.T.x + G.jokers.T.w/2, G.jokers.T.y, G.CARD_W, G.CARD_H, nil, G.P_CENTERS['j_infus_fused'],{bypass_discovery_center = true, infinifusion = infinifusion, infus_editions = #editions > 0 and editions})
 		G.jokers:emplace(new_fusion)
 		new_fusion:add_to_deck()
 		new_fusion:juice_up()

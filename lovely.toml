@@ -9,4 +9,7 @@ target = "card.lua"
 position = "before"
 pattern = 'self:set_ability(center, true)'
 match_indent = true
-payload = 'if self.params.infinifusion then self.infinifusion = self.params.infinifusion end'
+payload = '''
+	if self.params.infinifusion then self.infinifusion = self.params.infinifusion end
+	if self.params.infus_editions then self.infus_editions = self.params.infus_editions end
+'''
