@@ -404,7 +404,7 @@ SMODS.Consumable {
 function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc_func, finalcalc_func)
 	context = context or {}
 	if context.no_edition then
-		card.infus_editions = card.edition.key
+		card.infus_editions = card.edition and card.edition.key
 		card:set_edition(nil, true, true)
 	end
 	
