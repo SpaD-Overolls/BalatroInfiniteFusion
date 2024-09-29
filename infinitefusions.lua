@@ -16,8 +16,10 @@ SMODS.Joker {
 	pos = {x = 9, y = 9},
 	soul_pos = {x = 5, y = 3},
 	omit = true,
+	blueprint_compat = true,
+	rarity = 'infinifusion',
 	set_ability = function(self, card, initial, delay_sprites)
-		if not card.infinifusion then card.infinifusion = {{key = 'j_perkeo'},{key = 'j_joker'}} end
+		if not card.infinifusion then card.infinifusion = {{key = 'j_joker'},{key = 'j_joker'}} end
 		card.ability_placeholder = card.ability
 		for i = 1, #card.infinifusion do
 			if not card.infinifusion[i].ability then
@@ -28,6 +30,8 @@ SMODS.Joker {
 			end
 		end
 		
+		card.ability = card.ability_placeholder
+		infinifusion_init_ability(card)
 		card.config.center = G.P_CENTERS['j_infus_fused']
 	end,
 	set_sprites = function(self, card, front)
@@ -44,14 +48,12 @@ SMODS.Joker {
 		if card.infinifusion_api then
 			local fus = card.infinifusion_api
 			if (fus.atlas and G.ASSET_ATLAS[fus.atlas]) or fus.pos then
-				print('hello???')
 				atlas = G.ASSET_ATLAS[fus.atlas] or G.ASSET_ATLAS["Joker"]
 				pos = fus.pos or {x = 0, y = 0}
 			end
 			
 			if not fus.soul_pos and not fus.soul_atlas then
 				soul_pos = {x = -2, y = -2}
-				soul_atlas = G.ASSET_ATLAS["Joker"]
 			else
 				soul_pos = fus.soul_pos or {x = 1, y = 1}
 				soul_atlas = G.ASSET_ATLAS[fus.soul_atlas] or atlas
@@ -62,29 +64,104 @@ SMODS.Joker {
 			end
 		end
 		
+		if not card.infinifusion_api or (card.infinifusion_api 
+		and not ((card.infinifusion_api.atlas and G.ASSET_ATLAS[card.infinifusion_api.atlas]) or card.infinifusion_api.pos) 
+		or (card.infinifusion_api.set_sprites and type(card.infinifusion_api.set_sprites) == 'function')) then -- Procedural generation
+			local same_check = card.infinifusion[1].key
+			local wee = nil
+			local square = nil
+			--local photo = nil
+			for i = 1, #card.infinifusion do
+				if card.infinifusion[i].key ~= same_check then
+					same_check = nil
+				end
+				
+				if card.infinifusion[i].key == 'j_wee' then wee = true end
+				if card.infinifusion[i].key == 'j_square' then square = true end
+				--if card.infinifusion[i].key == 'j_photograph' then photo = true end
+			end
+			
+			if same_check then
+				atlas = G.ASSET_ATLAS[G.P_CENTERS[same_check]] or G.ASSET_ATLAS["Joker"]
+				soul_atlas = atlas
+				pos = G.P_CENTERS[same_check].pos or {x = 0, y = 0}
+				soul_pos = G.P_CENTERS[same_check].soul_pos or {x = -2, y = -2}
+			end
+			local args = {same_check = same_check, wee = wee, square = square}
+			set_sprites = function(self, card, front)
+				local H = G.CARD_H
+				local W = G.CARD_W
+				local scale = args.wee and 0.7 or 1
+				if args.same_check then
+					local same_center = G.P_CENTERS[same_check]
+					if same_center.set_sprites and type(same_center.set_sprites) == 'function' then
+						card.config.center = same_center
+						card.ability = card.infinifusion[1].ability
+						same_center.set_sprites(same_center, card, front)
+						card.config.center = G.P_CENTERS['j_infus_fused']
+						card.ability = card.ability_placeholder
+						return nil
+					end
+					
+					if same_check == 'j_half' then
+						H = H/1.7
+					end
+					
+					if same_check == 'j_photograph' then
+						H = H/1.2
+					end
+				end
+				
+				if args.square then
+					H = W
+				end
+				
+				card.T.h = H*scale
+				card.T.w = W*scale
+				
+				card.VT.h = card.T.h
+				card.VT.w = card.T.w
+				
+				
+				if args.same_check then
+					if args.square then
+						card.children.center.scale.y = card.children.center.scale.x
+					end
+					
+					if same_check == 'j_half' then
+						card.children.center.scale.y = card.children.center.scale.y/1.7
+					end
+					
+					if same_check == 'j_photograph' then
+						card.children.center.scale.y = card.children.center.scale.y/1.2
+					end
+				end
+			end
+		end
+		
 		card.children.center.atlas = atlas
 		card.children.center:set_sprite_pos(pos)
 		card.children.floating_sprite.atlas = soul_atlas
 		card.children.floating_sprite:set_sprite_pos(soul_pos)
 		
-		if set_sprites then set_sprites(card.infinifusion_api, card, front) end
+		if set_sprites then set_sprites(card.infinifusion_api or self, card, front) end
 	end,
 	load = function(self, card, card_table, other_card)
-		calculate_infinijoker(card, function(i)
+		calculate_infinifusion(card, nil, function(i)
 			if G.P_CENTERS[card.infinifusion[i].key].load then
 				G.P_CENTERS[card.infinifusion[i].key].load(G.P_CENTERS[card.infinifusion[i].key], card, card_table, other_card)
 			end
 		end)
 	end,
 	add_to_deck = function(self, card, from_debuff)
-		calculate_infinijoker(card, function(i)
+		calculate_infinifusion(card, nil, function(i)
 			card.added_to_deck = nil
 			card:add_to_deck(from_debuff)
 		end)
 		card.added_to_deck = true
 	end,
 	remove_from_deck = function(self, card, from_debuff)
-		calculate_infinijoker(card, function(i)
+		calculate_infinifusion(card, nil, function(i)
 			card.added_to_deck = true
 			card:remove_from_deck(from_debuff)
 		end)
@@ -105,7 +182,7 @@ SMODS.Joker {
 		end
 		
 		if not context.joker_retrigger then -- fusion mustn't retrigger itself
-			calculate_infinijoker(card, function(i)
+			calculate_infinifusion(card, nil, function(i)
 				local ret = card:calculate_joker(context)
 				-- sixth sense edgecase
 				if context.destroying_card and not context.blueprint then
@@ -129,7 +206,7 @@ SMODS.Joker {
 	end,
 	
 	calc_dollar_bonus = function(self, card)
-		calculate_infinijoker(card, function(i)
+		calculate_infinifusion(card, nil, function(i)
 			card:calculate_dollar_bonus()
 		end)
 	end,
@@ -158,7 +235,7 @@ SMODS.Joker {
 			
 			-- Custom loc_txt
 			if G.localization.descriptions.Joker[fus.key] then
-				-- Fix up missing name/description
+				-- Fix up missing name/description (needs testing)
 				if not G.localization.descriptions.Joker[fus.key].name then
 					G.localization.descriptions.Joker[fus.key].name = G.localization.descriptions.Joker["j_infus_fused"].name
 					G.localization.descriptions.Joker[fus.key].name_parsed = G.localization.descriptions.Joker["j_infus_fused"].name_parsed
@@ -311,7 +388,8 @@ SMODS.Consumable {
 
 -- other functions --
 
-function calculate_infinijoker(card, calc_func, precalc_func, postcalc_func, finalcalc_func)
+function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc_func, finalcalc_func)
+	context = context or {}
 	for i = 1, #card.infinifusion do
 		if precalc_func and type(precalc_func) == 'function' then precalc_func(i) end
 		card.ability = copy_table(card.infinifusion[i].ability)
@@ -321,9 +399,59 @@ function calculate_infinijoker(card, calc_func, precalc_func, postcalc_func, fin
 		if postcalc_func and type(postcalc_func) == 'function' then postcalc_func(i) end
 	end
 	
+	infinifusion_sync_ability(card)
 	card.ability = card.ability_placeholder
 	card.config.center = G.P_CENTERS['j_infus_fused']
 	if finalcalc_func and type(finalcalc_func) == 'function' then finalcalc_func(i) end
+end
+
+function infinifusion_sync_ability(card)
+	local keys = {'extra_value', 'perish_tally'}
+	for i = 0, #card.infinifusion do
+		local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
+		
+		if tbl then
+			for tbl_i = 1, #keys do
+				local tbl_k = keys[tbl_i]
+				
+				if card.ability[tbl_k] then
+					tbl[tbl_k] = type(card.ability[tbl_k]) == 'table' and copy_table(card.ability[tbl_k]) or card.ability[tbl_k]
+				end
+			end
+		end
+	end
+end
+
+function infinifusion_init_ability(card)
+	local keys = {'extra_value', 'perish_tally'}
+	local final_table = {}
+	for i = 1, #keys do
+		k = keys[i]
+		
+		for ii = 1, #card.infinifusion do
+			if card.infinifusion[ii].ability[k] then
+				if perish_tally then
+					if not final_table[k] then final_table[k] = G.GAME.perishable_rounds end
+					final_table[k] = math.min(final_table[k] or G.GAME.perishable_rounds, card.infinifusion[ii].ability[k])
+				else
+					if not final_table[k] then final_table[k] = 0 end
+					final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
+				end
+			end
+		end
+	end
+	
+	for k, v in pairs(final_table) do
+		for i = 0, #card.infinifusion do
+			local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
+			tbl[k] = v
+		end
+	end
+	
+	card.base_cost = 0
+	for i = 1, #card.infinifusion do
+		card.base_cost = card.base_cost + (G.P_CENTERS[card.infinifusion[i].key].cost or 1)
+	end
 end
 
 function infinifusion_loc_vars(card)
