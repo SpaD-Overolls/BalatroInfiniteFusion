@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, Joey J. Jester]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.2
+--- VERSION: 0.0.3
 
 -- using a placeholder sprite by Joey J. Jester
 
@@ -16,7 +16,6 @@ SMODS.Joker {
 	pos = {x = 9, y = 9},
 	soul_pos = {x = 5, y = 3},
 	omit = true,
-	blueprint_compat = true,
 	rarity = 'infinifusion',
 	set_ability = function(self, card, initial, delay_sprites)
 		if not card.infinifusion then card.infinifusion = {{key = 'j_joker'},{key = 'j_joker'}} end
@@ -184,37 +183,39 @@ SMODS.Joker {
 	end,
 	
 	calculate = function(self, card, context)
-		local global_ret = nil
-		local current_joker = nil
-		local restore_func = function(i)
-			if current_joker then
-				card.config.center = G.P_CENTERS[current_joker.key]
-				card.ability = current_joker.ability
+		if not context.blueprint then
+			local global_ret = nil
+			local current_joker = nil
+			local restore_func = function(i)
+				if current_joker then
+					card.config.center = G.P_CENTERS[current_joker.key]
+					card.ability = current_joker.ability
+				end
 			end
+			
+			if not context.joker_retrigger then -- fusion mustn't retrigger itself
+				calculate_infinifusion(card, nil, function(i)
+					local ret = card:calculate_joker(context)
+					-- sixth sense edgecase
+					if context.destroying_card and not context.blueprint then
+						global_ret = ret
+					end
+				end,
+				-- precalc_func
+				function(i)
+					if card.config.center ~= G.P_CENTERS['j_infus_fused'] and not current_joker then
+						current_joker = {
+							key = card.config.center.key,
+							ability = copy_table(card.ability)
+						}
+					end
+				end,
+				-- postcalc_func and finalcalc_func
+				restore_func(i), restore_func(i))
+			end
+			
+			if global_ret then return global_ret end
 		end
-		
-		if not context.joker_retrigger then -- fusion mustn't retrigger itself
-			calculate_infinifusion(card, nil, function(i)
-				local ret = card:calculate_joker(context)
-				-- sixth sense edgecase
-				if context.destroying_card and not context.blueprint then
-					global_ret = ret
-				end
-			end,
-			-- precalc_func
-			function(i)
-				if card.config.center ~= G.P_CENTERS['j_infus_fused'] and not current_joker then
-					current_joker = {
-						key = card.config.center.key,
-						ability = copy_table(card.ability)
-					}
-				end
-			end,
-			-- postcalc_func and finalcalc_func
-			restore_func(i), restore_func(i))
-		end
-		
-		if global_ret then return global_ret end
 	end,
 	
 	calc_dollar_bonus = function(self, card)
