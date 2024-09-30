@@ -1,12 +1,12 @@
 --- STEAMODDED HEADER
 --- MOD_NAME: Infinite Fusion
 --- MOD_ID: InfiniteFusion
---- MOD_AUTHOR: [SpaD_Overolls, Joey J. Jester]
+--- MOD_AUTHOR: [SpaD_Overolls, humplydinkle]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.3
+--- VERSION: 0.0.4
 
--- using a placeholder sprite by Joey J. Jester
+-- using a placeholder sprite by humplydinkle
 
 InfiniteFusion = SMODS.current_mod
 InfiniteFusion.badge_colour = HEX('de2323')
@@ -403,8 +403,8 @@ SMODS.Consumable {
 
 function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc_func, finalcalc_func)
 	context = context or {}
-	if context.no_edition then
-		card.infus_editions = card.edition and card.edition.key
+	if context.no_edition and card.edition then
+		card.infus_editions = card.edition and copy_table(card.edition)
 		card:set_edition(nil, true, true)
 	end
 	
@@ -421,7 +421,7 @@ function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc
 	card.ability = card.ability_placeholder
 	card.config.center = G.P_CENTERS['j_infus_fused']
 	
-	if context.no_edition then
+	if context.no_edition and card.infus_editions then
 		card:set_edition(card.infus_editions, true, true)
 		card.infus_editions = nil
 	end
@@ -859,6 +859,19 @@ function Game:update(dt)
 	InfiniteFusion.badge_colour[1] = 0.6 + 0.2*math.sin(self.TIMERS.REAL*1.2)
 	InfiniteFusion.badge_colour[2] = 0.6 + 0.2*math.cos(self.TIMERS.REAL)
 	InfiniteFusion.badge_colour[3] = 0.6 + 0.2*math.sin((self.TIMERS.REAL+5)*1.1)
+end
+
+local set_edition_ref = Card.set_edition
+function Card:set_edition(edition, immediate, silent)
+	if self.infus_editions and self.infus_editions.key then
+		if not edition then
+			self.edition = nil
+		else
+			self.edition = copy_table(self.infus_editions)
+		end
+	else
+		set_edition_ref(self, edition, immediate, silent)
+	end
 end
 
 ------------------------------------------
