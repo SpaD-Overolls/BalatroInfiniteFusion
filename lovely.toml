@@ -26,3 +26,11 @@ if other.infinifusion_api_checked then
 	new_card.infinifusion_api = other.infinifusion_api
 end
 '''
+
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+position = "before"
+pattern = "(self.ability.set == 'Joker' and {G.C.RARITY[self.config.center.rarity]}) or"
+match_indent = false
+payload = "self.infinifusion and {InfiniteFusion.badge_colour} or"
