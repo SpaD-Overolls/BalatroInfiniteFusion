@@ -47,5 +47,84 @@ SMODS.InfiniFusion {
 		-- exactly the same as SMODS.Center counterpart
 	end,
 	
+	-- set this to true if you don't want
+	-- find_card to search through the subjokers
+	-- of this fusion
+	disable_find_card = nil,
 	
+	
+	-----------------------------------------------------
+	--	BEHAVIOUR CHANGES
+	-----------------------------------------------------
+	-- WARNING: once you change any of these, the InfiniFusion stops calculating using its subjokers
+	
+	-- set to a valid Joker key if you want this Fusion to create a different Joker instead
+	-- the intent of this feature is to register Fusion Jokers from
+	-- other mods to create them using InfiniFusion Fusion System
+	joker = nil, 
+	
+	config = {
+		-- same as SMODS.Joker
+	},
+	
+	set_ability = function(self, card, initial, delay_sprites)
+		-- same as SMODS.Joker
+	end,
+	
+	add_to_deck = function(self, card, from_debuff)
+		-- same as SMODS.Joker
+	end,
+	
+	remove_from_deck = function(self, card, from_debuff)
+		-- same as SMODS.Joker
+	end,
+	
+	calculate = function(self, card, context)
+		-- same as SMODS.Joker
+		-- -- except incompatible with Blueprint for consistency
+	end,
+	
+	calc_dollar_bonus = function(self, card)
+		-- same as SMODS.Joker
+	end
 }
+
+-- New features for SMODS.Joker
+SMODS.Joker {
+	-- Prevent InfiniFusion from fusing this Joker
+	-- Use this if InfiniFusion is incompatible with the Joker
+	-- and the incompatibility cannot be resolved by tweaking the Joker
+	infinifusion_incompat = nil, -- set to true
+	
+	-- Set this to an InfiniFusion key
+	-- if you want this Joker to be treated as
+	-- that InfiniFusion for purposes of further Fusion/Unfusion
+	infinifusion = nil, -- gets set automatically if an InfiniFusion claims this Joker
+	-- You may input an invalid key if you don't want InfiniFusions changing this value automatically
+}
+
+-----------------------------
+--
+--      DebugPlus
+--
+----------------------------
+
+-- /infuse <InfiniFusion key>
+-- -- -- Spawns the InfiniFusion with this key
+
+-- /infuse <argument> <argument>
+-- -- -- Fuse the Jokers from specified arguments
+-- -- -- -- (can be any amount of arguments as long as at least 2 of them are valid)
+-- --
+-- -- -- -- Valid arguments:
+-- -- -- -- -- InfiniFusion key
+-- -- -- -- (for example if_fuze_collector)
+-- -- -- Adds the contents of this InfiniFusion into the contents of the created InfiniFusion
+-- -- --
+-- -- -- -- -- Joker key
+-- -- -- -- (for example j_joker)
+-- -- -- Adds this Joker into the contents of the created InfiniFusion
+-- -- --
+-- -- -- -- -- Numbers
+-- -- -- Adds the Joker from the corresponding Joker slot into the contents of the created InfiniFusion
+-- -- -- (The Joker specified this way will be fused into the resulting InfiniFusion, removing the original copy)

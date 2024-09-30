@@ -9,6 +9,7 @@
 -- using a placeholder sprite by humplydinkle
 
 InfiniteFusion = SMODS.current_mod
+InfiniteFusion.debugplus = false
 InfiniteFusion.badge_colour = HEX('de2323')
 
 SMODS.Joker {
@@ -19,17 +20,19 @@ SMODS.Joker {
 	rarity = 'infinifusion',
 	set_ability = function(self, card, initial, delay_sprites)
 		if not card.infinifusion then card.infinifusion = {{key = 'j_joker'},{key = 'j_joker'}} end
-		card.ability_placeholder = card.ability
-		for i = 1, #card.infinifusion do
-			if not card.infinifusion[i].ability then
-				card.config.center = nil
-				card.ability = nil
-				card:set_ability(G.P_CENTERS[card.infinifusion[i].key], initial, delay_sprites)
-				card.infinifusion[i].ability = copy_table(card.ability)
+		
+		if self.has_behaviour(card) then
+			local api = card.infinifusion_api
+			if api.config and type(api.config) == 'table' then 
+				for k, v in pairs(api.config) do
+					card.ability[k] = type(v) == 'table' and copy_table(v) or v
+				end
+			end
+			if api.set_ability and type(api.set_ability) == 'function' then
+				api.set_ability(self, card, initial, delay_sprites)
 			end
 		end
 		
-		card.ability = card.ability_placeholder
 		infinifusion_init_ability(card)
 		
 		if card.infus_editions then
@@ -38,6 +41,20 @@ SMODS.Joker {
 		card.params.infus_editions = nil
 		card.infus_editions = nil
 		card.config.center = G.P_CENTERS['j_infus_fused']
+		self.set_sprites(self, card, front)
+	end,
+	has_behaviour = function(card)
+		if not card.infinifusion_api then return nil 
+		else
+			local api = card.infinifusion_api
+			if api.config and type(api.config) == 'table' then return true end
+			if api.set_ability and type(api.set_ability) == 'function' then return true end
+			if api.calculate and type(api.calculate) == 'function' then return true end
+			if api.add_to_deck and type(api.add_to_deck) == 'function' then return true end
+			if api.remove_from_deck and type(api.remove_from_deck) == 'function' then return true end
+			if api.calc_dollar_bonus and type(api.calc_dollar_bonus) == 'function' then return true end
+		end
+		return nil
 	end,
 	set_sprites = function(self, card, front)
 		infinifusion_check_fusion(card)
@@ -164,19 +181,33 @@ SMODS.Joker {
 		end)
 	end,
 	add_to_deck = function(self, card, from_debuff)
-		calculate_infinifusion(card, {no_edition = true}, function(i)
-			card.added_to_deck = nil
-			card:add_to_deck(from_debuff)
-		end)
-		
-		card.added_to_deck = true
+		if not self.has_behaviour(card) then
+			calculate_infinifusion(card, {no_edition = true}, function(i)
+				card.added_to_deck = nil
+				card:add_to_deck(from_debuff)
+			end)
+			
+			card.added_to_deck = true
+		else
+			local api = card.infinifusion_api
+			if api.add_to_deck and type(api.add_to_deck) == 'function' then
+				api.add_to_deck(self, card, from_debuff)
+			end
+		end
 	end,
 	remove_from_deck = function(self, card, from_debuff)
-		calculate_infinifusion(card, {no_edition = true}, function(i)
-			card.added_to_deck = true
-			card:remove_from_deck(from_debuff)
-		end)
-		card.added_to_deck = false
+		if not self.has_behaviour(card) then
+			calculate_infinifusion(card, {no_edition = true}, function(i)
+				card.added_to_deck = true
+				card:remove_from_deck(from_debuff)
+			end)
+			card.added_to_deck = false
+		else
+			local api = card.infinifusion_api
+			if api.remove_from_deck and type(api.remove_from_deck) == 'function' then
+				api.remove_from_deck(self, card, from_debuff)
+			end
+		end
 	end,
 	
 	update = function(self, card, dt)
@@ -184,44 +215,62 @@ SMODS.Joker {
 	
 	calculate = function(self, card, context)
 		if not context.blueprint then
-			local global_ret = nil
-			local current_joker = nil
-			local restore_func = function(i)
-				if current_joker then
-					card.config.center = G.P_CENTERS[current_joker.key]
-					card.ability = current_joker.ability
+			if not self.has_behaviour(card) then
+				local global_ret = nil
+				local current_joker = nil
+				local restore_func = function(i)
+					if current_joker then
+						card.config.center = G.P_CENTERS[current_joker.key]
+						card.ability = current_joker.ability
+					end
+				end
+				
+				if not context.joker_retrigger then -- fusion mustn't retrigger itself
+					calculate_infinifusion(card, nil, function(i)
+						local ret = card:calculate_joker(context)
+						-- sixth sense edgecase
+						if context.destroying_card and not context.blueprint then
+							global_ret = ret
+						end
+					end,
+					-- precalc_func
+					function(i)
+						if card.config.center ~= G.P_CENTERS['j_infus_fused'] and not current_joker then
+							current_joker = {
+								key = card.config.center.key,
+								ability = copy_table(card.ability)
+							}
+						end
+					end,
+					-- postcalc_func and finalcalc_func
+					restore_func(i), restore_func(i))
+				end
+				
+				if global_ret then return global_ret end
+			else
+				local api = card.infinifusion_api
+				if api.calculate and type(api.calculate) == 'function' then
+					return api.calculate(self, card, context)
 				end
 			end
-			
-			if not context.joker_retrigger then -- fusion mustn't retrigger itself
-				calculate_infinifusion(card, nil, function(i)
-					local ret = card:calculate_joker(context)
-					-- sixth sense edgecase
-					if context.destroying_card and not context.blueprint then
-						global_ret = ret
-					end
-				end,
-				-- precalc_func
-				function(i)
-					if card.config.center ~= G.P_CENTERS['j_infus_fused'] and not current_joker then
-						current_joker = {
-							key = card.config.center.key,
-							ability = copy_table(card.ability)
-						}
-					end
-				end,
-				-- postcalc_func and finalcalc_func
-				restore_func(i), restore_func(i))
-			end
-			
-			if global_ret then return global_ret end
 		end
 	end,
 	
 	calc_dollar_bonus = function(self, card)
-		calculate_infinifusion(card, nil, function(i)
-			card:calculate_dollar_bonus()
-		end)
+		if not self.has_behaviour(card) then
+			local global_ret = 0
+			calculate_infinifusion(card, nil, function(i)
+				global_ret = global_ret + card:calculate_dollar_bonus()
+			end)
+			if global_ret ~= 0 then
+				return global_ret
+			end
+		else
+			local api = card.infinifusion_api
+			if api.calc_dollar_bonus and type(api.calc_dollar_bonus) == 'function' then
+				return api.calc_dollar_bonus(self,card)
+			end
+		end
 	end,
 	
 	-- non-calc functions
@@ -316,10 +365,31 @@ SMODS.InfiniFusion = SMODS.GameObject:extend {
 	end,
 	inject = function(self)
 		if self.contents and type(self.contents) == 'table' and #self.contents >= 2 then
-			G.INFINIFUSIONS[self.key] = self		
-			if not G.INFINIFUSION_POOLS[#self.contents] then G.INFINIFUSION_POOLS[#self.contents] = {} end
-			table.insert(G.INFINIFUSION_POOLS[#self.contents], self)
+			local valid = true
+			
+			for i = 1, #self.contents do
+				if not G.P_CENTERS[self.contents[i]] or G.P_CENTERS[self.contents[i]].infinifusion_incompat then
+					valid = false
+				end
+			end
+			
+			if valid then
+				G.INFINIFUSIONS[self.key] = self		
+				if not G.INFINIFUSION_POOLS[#self.contents] then G.INFINIFUSION_POOLS[#self.contents] = {} end
+				table.insert(G.INFINIFUSION_POOLS[#self.contents], self)
+				
+				if self.joker and G.P_CENTERS[self.joker] and not G.P_CENTERS[self.joker].infinifusion then
+					G.P_CENTERS[self.joker].infinifusion = self.key
+				end
+			else print('[Invalid Fusion] - '..self.key.." - contains incompatible/nonexistent Jokers") end
 		else print("[Invalid Fusion] - "..self.key.." - self.contents must be a table of 2 or more elements") end
+	end,
+	post_inject_class = function(self)
+		table.sort(G.INFINIFUSIONS, function(a, b)
+			local a_order = a.order or #G.INFINIFUSIONS
+			local b_order = b.order or (#G.INFINIFUSIONS + 1)
+			return a_order < b_order 
+		end)
 	end,
 	process_loc_text = function(self)
 		if self.loc_txt then
@@ -386,7 +456,10 @@ SMODS.Consumable {
 	discovered = true,
 	can_use = function(self, card)
 		if G.jokers and G.jokers.cards and #G.jokers.cards >= 2 then
-			return true
+			if not G.jokers.cards[1].config.center.infinifusion_incompat and
+			not G.jokers.cards[#G.jokers.cards].config.center.infinifusion_incompat then
+				return true
+			end
 		end
 		return false
 	end,
@@ -394,7 +467,11 @@ SMODS.Consumable {
 		G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.4, func = function()
             play_sound('tarot1')
             card:juice_up(0.3, 0.5)
-			infinifusion_fuse_cards({G.jokers.cards[1], G.jokers.cards[#G.jokers.cards]})
+			local new_card = create_infinifusion{contents = {G.jokers.cards[1], G.jokers.cards[#G.jokers.cards]}}
+			G.jokers:emplace(new_card)
+			new_card:add_to_deck()
+			new_card:juice_up()
+			--infinifusion_fuse_cards({G.jokers.cards[1], G.jokers.cards[#G.jokers.cards]})
             return true end }))
 	end
 }
@@ -417,9 +494,11 @@ function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc
 		if postcalc_func and type(postcalc_func) == 'function' then postcalc_func(i) end
 	end
 	
-	infinifusion_sync_ability(card)
+	if not context.no_sync then
+		infinifusion_sync_ability(card)
+	end
 	card.ability = card.ability_placeholder
-	card.config.center = G.P_CENTERS['j_infus_fused']
+	card.config.center = card.infinifusion_center or G.P_CENTERS['j_infus_fused']
 	
 	if context.no_edition and card.infus_editions then
 		card:set_edition(card.infus_editions, true, true)
@@ -446,11 +525,26 @@ function infinifusion_sync_ability(card)
 end
 
 function infinifusion_init_ability(card)
+	card.ability_placeholder = card.ability
+	for i = 1, #card.infinifusion do
+		if not card.infinifusion[i].ability then
+			card.config.center = nil
+			card.ability = nil
+			card:set_ability(G.P_CENTERS[card.infinifusion[i].key], initial, delay_sprites)
+			card.infinifusion[i].ability = copy_table(card.ability)
+		end
+	end
+		
+	card.ability = card.ability_placeholder
+	card.config.center = card.infinifusion_center or G.P_CENTERS['j_infus_fused']
+	card:set_sprites(card.config.center)
+	
 	local keys = {'extra_value', 'perish_tally'}
 	local stickers = {}
 	local sticker_compats = {}
 	local final_sticker_compats = {}
 	local final_table = {}
+	local final_table_synced = {}
 	
 	for k, v in pairs(SMODS.Stickers) do
 		stickers[#stickers+1] = v.key
@@ -466,33 +560,46 @@ function infinifusion_init_ability(card)
 				elseif type(card.infinifusion[ii].ability[k]) == 'boolean' and not card.infinifusion[ii].ability[k] == false then
 					final_table[k] = card.infinifusion[ii].ability[k]
 				else
-					if not final_table[k] then final_table[k] = 0 end
-					final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
+					if card.infinifusion[ii].ability.infinifusion_init then
+						if not final_table_synced[k] then final_table_synced[k] = card.infinifusion[ii].ability[k] end
+					else
+						if not final_table[k] then final_table[k] = 0 end
+						final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
+					end
 				end
 			end
 		end
 	end
 	
-	for k, v in pairs(final_table) do
-		for i = 0, #card.infinifusion do
-			local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
+	for k, v in pairs(final_table_synced) do
+		if not final_table[k] then final_table[k] = v 
+		else final_table[k] = final_table[k] + v end
+	end
+	
+	for i = 0, #card.infinifusion do
+		local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
+		for k, v in pairs(final_table) do
 			tbl[k] = v
 		end
+		tbl.infinifusion_init = true
 	end
 	
 	for k, v in pairs(SMODS.Stickers) do
 		if final_table[v.key] then
 			sticker_compats[v.key] = {}
-			for i = 1, #card.infinifusion do
-				if v.should_apply and type(v.should_apply) == 'function' then
-					sticker_compats[v.key][i] = v:should_apply(card, G.P_CENTERS[card.infinifusion[i].key], G.jokers, true)
-				else
-					if v.key == 'etertnal' then
-						sticker_compats[v.key][i] = G.P_CENTERS[card.infinifusion[i].key].eternal_compat
-					elseif v.key == 'perishable' then
-						sticker_compats[v.key][i] = G.P_CENTERS[card.infinifusion[i].key].perishable_compat
+			for i = 0, #card.infinifusion do
+				local target = i == 0 and {key = card.config.center.key, ability = card.ability} or card.infinifusion[i]
+				if target.key ~= 'j_infus_fused' then
+					if v.should_apply and type(v.should_apply) == 'function' then
+						sticker_compats[v.key][i] = v:should_apply(card, G.P_CENTERS[target.key], G.jokers, true)
 					else
-						sticker_compats[v.key][i] = true
+						if v.key == 'etertnal' then
+							sticker_compats[v.key][i] = G.P_CENTERS[target.key].eternal_compat
+						elseif v.key == 'perishable' then
+							sticker_compats[v.key][i] = G.P_CENTERS[target.key].perishable_compat
+						else
+							sticker_compats[v.key][i] = true
+						end
 					end
 				end
 			end
@@ -557,42 +664,131 @@ function infinifusion_loc_vars(card)
 	return ret
 end
 
--- TODO: clean up
-function infinifusion_fuse_cards(cards)
-	cards = cards or {}
-	if not type(cards) == 'table' or #cards < 2 then return nil end
-	G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
-	func = function()
-		local infinifusion = {}
-		local editions = {}
-		for i = 1, #cards do
-			if cards[i].config.center.key == 'j_infus_fused' then
-				for ii = 1, #cards[i].infinifusion do
-					infinifusion[#infinifusion+1] = cards[i].infinifusion[ii]
-				end
-			else
-				local card = {}
-				card.key = cards[i].config.center.key
-				card.ability = copy_table(cards[i].ability)
-				infinifusion[#infinifusion+1] = card
+function create_infinifusion(args)
+	if not args then return nil end
+	local target = nil
+	local contents = {}
+	local cards = {}
+	local infuse_tbl = {}
+	local editions = {}
+	local new_card = nil
+	local force_joker = nil
+	local infus_api = nil
+	
+	if args.key then
+		if G.INFINIFUSIONS[args.key] then
+			target = G.INFINIFUSIONS[args.key]
+			contents = target.contents
+			if target.joker and G.P_CENTERS[target.joker] then
+				force_joker = G.P_CENTERS[target.joker]
 			end
-			
-			editions[#editions+1] = cards[i].edition and cards[i].edition.key
-			
-			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
-			func = function()
-				G.jokers:remove_card(cards[i])
-				cards[i]:remove_from_deck()
-				cards[i]:remove()
-				cards[i] = nil
-			return true; end})) 
+		else
+			print("Bad Key - create_infinifusion")
+			return nil
+		end
+	elseif args.target then
+		if args.target.joker and G.P_CENTERS[args.target.joker] then
+			force_joker = G.P_CENTERS[args.target.joker] 
+		end
+		target = args.target
+		contents = target.contents
+	elseif args.contents and type(args.contents) == 'table' then
+		if #args.contents > 1 then
+			contents = args.contents
+			local check_contents = {}
+			for i = 1, #contents do
+				if type(contents[i]) == "table" then
+					if contents[i].config and contents[i].config.center then
+						check_contents[i] = contents[i].config.center.key
+					end
+				else check_contents[i] = contents[i] end
+			end
+			target = infinifusion_find_fusion(check_contents)
+			if target and target.joker and G.P_CENTERS[target.joker] then
+				force_joker = G.P_CENTERS[target.joker] 
+			end
+		else
+			print("Not enough contents - create_infinifusion")
+			return nil 
+		end
+	end
+	
+	-- checking compatibility with infinifusion
+	for i = 1, #contents do
+		--print("contents run")
+		if type(contents[i]) == 'table' then
+			--print("contents run - table")
+			local card = contents[i]
+			if card.config.center.key == 'j_infus_fused' then
+				for ii = 1, #card.infinifusion do
+					infuse_tbl[#infuse_tbl + 1] = card.infinifusion[ii]
+				end
+				cards[#cards+1] = card
+			elseif card.config.center.infinifusion and G.INFINIFUSIONS[card.config.center.infinifusion] then
+				local infinifusion = G.INFINIFUSIONS[card.config.center.infinifusion]
+				for ii = 1, #infinifusion.contents do
+					infuse_tbl[#infuse_tbl + 1] = {key = infinifusion.contents[ii]}
+				end
+				cards[#cards+1] = card
+			elseif not card.config.center.infinifusion_incompat then
+				infuse_tbl[#infuse_tbl + 1] = {
+					key = card.config.center.key,
+					ability = copy_table(card.ability)
+				}
+				cards[#cards+1] = card
+			end
 		end
 		
-		local new_fusion = Card(G.jokers.T.x + G.jokers.T.w/2, G.jokers.T.y, G.CARD_W, G.CARD_H, nil, G.P_CENTERS['j_infus_fused'],{bypass_discovery_center = true, infinifusion = infinifusion, infus_editions = #editions > 0 and editions})
-		G.jokers:emplace(new_fusion)
-		new_fusion:add_to_deck()
-		new_fusion:juice_up()
-	return true; end})) 
+		if type(contents[i]) == 'string' and contents[i] ~= 'j_infus_fused' then
+			--print("contents run - string")
+			if G.P_CENTERS[contents[i]] and 
+			not G.P_CENTERS[contents[i]].infinifusion_incompat then
+				infuse_tbl[#infuse_tbl + 1] = {key = contents[i]}
+			else print("Bad Joker key - "..contents[i].." - create_infinifusion") end
+		end
+	end
+	-- prevent fusion if there's not enough targets
+	if #infuse_tbl < 2 then 
+		print("Not enough contents (infuse_tbl) - create_infinifusion")
+		return nil 
+	end
+	
+	for i = 1, #cards do
+		editions[#editions+1] = cards[i].edition and cards[i].edition.key
+		
+		G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
+		func = function()
+			cards[i].area:remove_card(cards[i])
+			cards[i]:remove_from_deck()
+			cards[i]:remove()
+			cards[i] = nil
+		return true; end})) 
+	end
+	
+	if not force_joker then
+		new_card = Card(
+			args.X or (G.jokers.T.x + G.jokers.T.w/2), 
+			args.Y or G.jokers.T.y, 
+			G.CARD_W, G.CARD_H, nil, 
+			G.P_CENTERS['j_infus_fused'],{
+				bypass_discovery_center = true, 
+				infinifusion = infuse_tbl, 
+				infus_editions = #editions > 0 and editions,
+				infus_api = infus_api})
+	else 
+		new_card = Card(
+			args.X or (G.jokers.T.x + G.jokers.T.w/2), 
+			args.Y or G.jokers.T.y, 
+			G.CARD_W, G.CARD_H, nil, 
+			force_joker,{
+				bypass_discovery_center = true,
+				infinifusion = infuse_tbl,
+				infus_api = target})
+		new_card.infinifusion_center = force_joker
+		card:set_edition(pseudorandom_element(editions, pseudoseed('fusion')), true, true)
+		infinifusion_init_ability(new_card)
+	end
+	return new_card
 end
 
 function infinifusion_vanilla_loc_var(self)
@@ -800,11 +996,13 @@ function SMODS.find_card(key, count_debuffed)
 	local fusions = find_card_ref('j_infus_fused', count_debuffed)
 	
 	for i = 1, #fusions do
-		local infinifusion = fusions[i].infinifusion
-		for i = 1, #infinifusion do
-			if infinifusion[i].key == key then
-				result[#result+1] = fusions[i]
-				break
+		if not fusions[i].infinifusion_api or not fusions[i].infinifusion_api.disable_find_card then
+			local infinifusion = fusions[i].infinifusion
+			for i = 1, #infinifusion do
+				if infinifusion[i].key == key then
+					result[#result+1] = fusions[i]
+					break
+				end
 			end
 		end
 	end
@@ -819,11 +1017,13 @@ function find_joker(name, non_debuff)
 	local fusions = find_card_ref('j_infus_fused', non_debuff)
 	
 	for i = 1, #fusions do
-		local infinifusion = fusions[i].infinifusion
-		for i = 1, #infinifusion do
-			if infinifusion[i].ability and infinifusion[i].ability.name and infinifusion[i].ability.name == name then
-				result[#result+1] = fusions[i]
-				break
+		if not fusions[i].infinifusion_api or not fusions[i].infinifusion_api.disable_find_card then
+			local infinifusion = fusions[i].infinifusion
+			for i = 1, #infinifusion do
+				if infinifusion[i].ability and infinifusion[i].ability.name and infinifusion[i].ability.name == name then
+					result[#result+1] = fusions[i]
+					break
+				end
 			end
 		end
 	end
@@ -837,9 +1037,13 @@ function Card:save()
 	local cardTable = card_save_ref(self)
 	
 	if self.infinifusion then
-		cardTable.save_fields.center = 'j_infus_fused'
+		cardTable.save_fields.center = self.infinifusion_center and self.infinifusion_center.key or 'j_infus_fused'
 		cardTable.infinifusion = self.infinifusion
-		cardTable.ability_placeholder = self.ability_placeholder
+		cardTable.ability_placeholder = self.ability_placeholder or self.ability
+		
+		if self.infinifusion_api then
+			cardTable.infinifusion_api = self.infinifusion_api.key
+		end
 	end
 	
 	return cardTable
@@ -848,7 +1052,14 @@ end
 local card_load_ref = Card.load
 function Card:load(cardTable, other_card)
 	self.infinifusion = cardTable.infinifusion
+	if self.infinifusion and cardTable.save_fields.center ~= 'j_infus_fused' then
+		self.infinifusion_center = G.P_CENTERS[cardTable.save_fields.center]
+	end
 	self.ability_placeholder = cardTable.ability_placeholder
+	if cardTable.infinifusion_api and G.INFINIFUSIONS[cardTable.infinifusion_api] then
+		self.infinifusion_api = G.INFINIFUSIONS[cardTable.infinifusion_api]
+		self.infinifusion_api_checked = true
+	end
 	card_load_ref(self, cardTable, other_card)
 end
 
@@ -873,6 +1084,94 @@ function Card:set_edition(edition, immediate, silent)
 		set_edition_ref(self, edition, immediate, silent)
 	end
 end
+
+------------------------
+--   DebugPlus command
+------------------------
+
+local success, dpAPI = pcall(require, "debugplus-api")
+
+local logger = {
+    log = print,
+    debug = print,
+    info = print,
+    warn = print,
+    error = print
+}
+
+if success and dpAPI.isVersionCompatible(0) then
+    local debugplus = dpAPI.registerID("Example")
+    logger = debugplus.logger
+
+    debugplus.addCommand({
+		name = "infuse",
+		source = "InfiniteFusion",
+		shortDesc = "Spawns an InfiniFusion",
+		desc = "Spawns an InfiniFusion using either an InfiniFusion key or a set of Joker keys.",
+		exec = function(args, rawArgs, dp)
+			if G.STAGE ~= G.STAGES.RUN then
+				return "This command must be run during a run.", "ERROR"
+			end
+			if not args[1] then return "Must have at least one argument.", "ERROR" end
+			local new_card = nil
+			local contents = {}
+			local jokers = {}
+			if #args == 1 then
+				if not string.find(args[1], '^if_') or not G.INFINIFUSIONS[args[1]] then
+					return "Invalid InfiniFusion key.", "ERROR"
+				else
+					new_card = create_infinifusion({key = args[1]})
+				end
+			else
+				for i = 1, #args do
+					local id = tonumber(args[i])
+					if id and id <= #G.jokers.cards and id > 0 then
+						if not jokers[id] and not G.jokers.cards[id].config.center.infinifusion_incompat then
+							jokers[id] = true
+							contents[#contents+1] = G.jokers.cards[id]
+						end
+					elseif string.find(args[i], '^if_') then
+						if G.INFINIFUSIONS[args.i] then
+							for ii = 1, #G.INFINIFUSIONS[args.i].contents do
+								local key = G.INFINIFUSIONS[args.i].contents[ii]
+								if G.P_CENTERS[key] and not G.P_CENTERS[key].infinifusion_incompat then
+									contents[#contents+1] = key
+								end
+							end
+						end
+					else
+						if G.P_CENTERS[args[i]] and not G.P_CENTERS[args[i]].infinifusion_incompat then
+							contents[#contents+1] = args[i]
+						end
+					end
+				end
+				
+				if #contents >= 2 then
+					new_card = create_infinifusion({contents = contents})
+				else return "Not enough Jokers to create a Fusion.", "ERROR" end
+			end
+			
+			if new_card then
+				G.jokers:emplace(new_card)
+				new_card:add_to_deck()
+				new_card:juice_up()
+				return "Fusion successful."
+			else return "Fusion failed.", "ERROR" end
+		end
+	})
+end
+
+------------------------------------------
+--
+--       OG Fusion Jokers Compat
+--
+------------------------------------------
+
+SMODS.InfiniFusion {
+	key = 'commercial_driver',
+	contents = {'j_ride_the_bus', 'j_drivers_license'},
+	joker = 'j_d_commercial_driver'
+}
 
 ------------------------------------------
 --
