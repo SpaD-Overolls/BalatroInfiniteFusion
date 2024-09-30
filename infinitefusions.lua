@@ -1160,21 +1160,3 @@ if success and dpAPI.isVersionCompatible(0) then
 		end
 	})
 end
-
-------------------------------------------
---
---       OG Fusion Jokers Compat
---
-------------------------------------------
-
-SMODS.InfiniFusion {
-	key = 'commercial_driver',
-	contents = {'j_ride_the_bus', 'j_drivers_license'},
-	joker = 'j_d_commercial_driver'
-}
-
-------------------------------------------
---
---    C R Y P T I D    C O M P A T
---
-------------------------------------------
