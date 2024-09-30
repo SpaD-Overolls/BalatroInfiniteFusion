@@ -8,8 +8,21 @@ priority = 1
 target = "card.lua"
 position = "before"
 pattern = 'self:set_ability(center, true)'
-match_indent = true
+match_indent = false
 payload = '''
 	if self.params.infinifusion then self.infinifusion = self.params.infinifusion end
 	if self.params.infus_editions then self.infus_editions = self.params.infus_editions end
+'''
+
+[[patches]]
+[patches.pattern]
+target = "functions/common_events.lua"
+position = "before"
+pattern = 'new_card:set_ability(other.config.center)'
+match_indent = false
+payload = '''if other.infinifusion then new_card.infinifusion = copy_table(other.infinifusion) end
+if other.infinifusion_api_checked then 
+	new_card.infinifusion_api_checked = other.infinifusion_api_checked
+	new_card.infinifusion_api = other.infinifusion_api
+end
 '''

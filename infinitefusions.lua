@@ -852,20 +852,6 @@ function Card:load(cardTable, other_card)
 	card_load_ref(self, cardTable, other_card)
 end
 
--- hook for proper copying
-local copy_card_ref = copy_card
-function copy_card(other, new_card, card_scale, playing_card, strip_edition)
-	local new_card = copy_card_ref(other, new_card, card_scale, playing_card, strip_edition)
-	
-	if other.infinifusion then 
-		new_card.infinifusion = copy_table(other.infinifusion) 
-		new_card.ability_placeholder = copy_table(other.ability_placeholder)
-		G.P_CENTERS["j_infus_fused"].set_sprites(G.P_CENTERS["j_infus_fused"], new_card, new_card.children.front or nil)
-	end
-	
-	return new_card
-end
-
 -- hook for cool badge
 local update_ref = Game.update
 function Game:update(dt)
@@ -874,3 +860,9 @@ function Game:update(dt)
 	InfiniteFusion.badge_colour[2] = 0.6 + 0.2*math.cos(self.TIMERS.REAL)
 	InfiniteFusion.badge_colour[3] = 0.6 + 0.2*math.sin((self.TIMERS.REAL+5)*1.1)
 end
+
+------------------------------------------
+--
+--    C R Y P T I D    C O M P A T
+--
+------------------------------------------
