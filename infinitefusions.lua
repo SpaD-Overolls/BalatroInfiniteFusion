@@ -12,6 +12,10 @@ InfiniteFusion = SMODS.current_mod
 InfiniteFusion.debugplus = false
 InfiniteFusion.badge_colour = HEX('de2323')
 
+InfiniteFusion.incompatible_jokers = {
+	'j_cry_equilib' -- [Cryptid] Ace Aequilibrium
+}
+
 SMODS.Joker {
 	key = 'fused',
 	pos = {x = 9, y = 9},
@@ -40,11 +44,6 @@ SMODS.Joker {
 		if natural then card.ability.natural_infinifusion = true end
 		infinifusion_init_ability(card)
 		
-		if card.infus_editions then
-			card:set_edition(pseudorandom_element(card.infus_editions, pseudoseed('fusion')), true, true)
-		end
-		card.params.infus_editions = nil
-		card.infus_editions = nil
 		card.config.center = G.P_CENTERS['j_infus_fused']
 		self.set_sprites(self, card, front)
 	end,
@@ -384,7 +383,7 @@ SMODS.InfiniFusion = SMODS.GameObject:extend {
 			local valid = true
 			
 			for i = 1, #self.contents do
-				if not G.P_CENTERS[self.contents[i]] or G.P_CENTERS[self.contents[i]].infinifusion_incompat then
+				if not G.P_CENTERS[self.contents[i]] or unfusable(G.P_CENTERS[self.contents[i]]) then
 					valid = false
 				end
 			end
@@ -473,8 +472,8 @@ SMODS.Consumable {
 	discovered = true,
 	can_use = function(self, card)
 		if G.jokers and G.jokers.cards and #G.jokers.cards >= 2 then
-			if not G.jokers.cards[1].config.center.infinifusion_incompat and
-			not G.jokers.cards[#G.jokers.cards].config.center.infinifusion_incompat then
+			if not unfusable(G.jokers.cards[1].config.center) and
+			not unfusable(G.jokers.cards[#G.jokers.cards].config.center) then
 				return true
 			end
 		end
@@ -500,7 +499,7 @@ function generate_random_infinifusion(num)
 	local pool = {}
 	local final_ability = {}
 	for k, v in ipairs(G.P_CENTER_POOLS.Joker) do
-		if v.unlocked and not v.infinifusion then
+		if v.unlocked and not v.infinifusion and not unfusable(v) then
 			local in_pool, pool_opts
 			local pool_flags = nil
 			local in_pool_exists, pool_flags_exist
@@ -777,7 +776,7 @@ function create_infinifusion(args)
 					infuse_tbl[#infuse_tbl + 1] = {key = infinifusion.contents[ii]}
 				end
 				cards[#cards+1] = card
-			elseif not card.config.center.infinifusion_incompat then
+			elseif not unfusable(card.config.center) then
 				infuse_tbl[#infuse_tbl + 1] = {
 					key = card.config.center.key,
 					ability = copy_table(card.ability)
@@ -789,7 +788,7 @@ function create_infinifusion(args)
 		if type(contents[i]) == 'string' and contents[i] ~= 'j_infus_fused' then
 			--print("contents run - string")
 			if G.P_CENTERS[contents[i]] and 
-			not G.P_CENTERS[contents[i]].infinifusion_incompat then
+			not unfusable(G.P_CENTERS[contents[i]]) then
 				infuse_tbl[#infuse_tbl + 1] = {key = contents[i]}
 			else print("Bad Joker key - "..contents[i].." - create_infinifusion") end
 		end
@@ -801,7 +800,7 @@ function create_infinifusion(args)
 	end
 	
 	for i = 1, #cards do
-		editions[#editions+1] = cards[i].edition and cards[i].edition.key
+		editions[#editions+1] = cards[i].edition and copy_table(cards[i].edition)
 		
 		G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
 		func = function()
@@ -820,8 +819,8 @@ function create_infinifusion(args)
 			G.P_CENTERS['j_infus_fused'],{
 				bypass_discovery_center = true, 
 				infinifusion = infuse_tbl, 
-				infus_editions = #editions > 0 and editions,
 				infus_api = infus_api})
+		new_card.edition = pseudorandom_element(editions, pseudoseed('fusion'))
 	else 
 		new_card = Card(
 			args.X or (G.jokers.T.x + G.jokers.T.w/2), 
@@ -832,7 +831,7 @@ function create_infinifusion(args)
 				infinifusion = infuse_tbl,
 				infus_api = target})
 		new_card.infinifusion_center = force_joker
-		card:set_edition(pseudorandom_element(editions, pseudoseed('fusion')), true, true)
+		new_card.edition = pseudorandom_element(editions, pseudoseed('fusion'))
 		infinifusion_init_ability(new_card)
 	end
 	return new_card
@@ -1136,18 +1135,27 @@ end
 -- Compat
 ------------------------
 
-local game_init_item_prototypesRef = Game.init_item_prototypes
-function Game:init_item_prototypes()
-    local game_init_item_prototypes = game_init_item_prototypesRef(self)
+function unfusable(self)
+	local k
+	if type(self) == 'string' then k = self
+	elseif self.key then k = self.key
+	elseif self.config and self.config.center then
+		k = self.config.center.key
+	else return true end
 	
-	local incompatible_jokers = {}
-	for _, k in ipairs(incompatible_jokers) do
-		if G.P_CENTERS[k] then
-			G.P_CENTERS[k].infinifusion_incompat = true
+	if not G.P_CENTERS[k] then return true end
+	if G.P_CENTERS[k].infinifusion_incompat then return true
+	else
+		for i = 1, #InfiniteFusion.incompatible_jokers do
+			if InfiniteFusion.incompatible_jokers[i] == k then
+				table.remove(InfiniteFusion.incompatible_jokers, i)
+				G.P_CENTERS[k].infinifusion_incompat = true
+				return true
+			end
 		end
 	end
 	
-	return game_init_item_prototypes
+	return nil
 end
 
 ------------------------
@@ -1177,11 +1185,16 @@ if success and dpAPI.isVersionCompatible(0) then
 			if G.STAGE ~= G.STAGES.RUN then
 				return "This command must be run during a run.", "ERROR"
 			end
-			if not args[1] then return "Must have at least one argument.", "ERROR" end
 			local new_card = nil
 			local contents = {}
 			local jokers = {}
-			if #args == 1 then
+			if not args[1] then
+				new_card = Card(
+					(G.jokers.T.x + G.jokers.T.w/2), 
+					G.jokers.T.y, 
+					G.CARD_W, G.CARD_H, nil, 
+					G.P_CENTERS['j_infus_fused'],{bypass_discovery_center = true,})
+			elseif #args == 1 then
 				if not string.find(args[1], '^if_') or not G.INFINIFUSIONS[args[1]] then
 					return "Invalid InfiniFusion key.", "ERROR"
 				else
@@ -1191,7 +1204,7 @@ if success and dpAPI.isVersionCompatible(0) then
 				for i = 1, #args do
 					local id = tonumber(args[i])
 					if id and id <= #G.jokers.cards and id > 0 then
-						if not jokers[id] and not G.jokers.cards[id].config.center.infinifusion_incompat then
+						if not jokers[id] and not unfusable(G.jokers.cards[id].config.center) then
 							jokers[id] = true
 							contents[#contents+1] = G.jokers.cards[id]
 						end
@@ -1199,13 +1212,13 @@ if success and dpAPI.isVersionCompatible(0) then
 						if G.INFINIFUSIONS[args.i] then
 							for ii = 1, #G.INFINIFUSIONS[args.i].contents do
 								local key = G.INFINIFUSIONS[args.i].contents[ii]
-								if G.P_CENTERS[key] and not G.P_CENTERS[key].infinifusion_incompat then
+								if G.P_CENTERS[key] and not unfusable(G.P_CENTERS[key]) then
 									contents[#contents+1] = key
 								end
 							end
 						end
 					else
-						if G.P_CENTERS[args[i]] and not G.P_CENTERS[args[i]].infinifusion_incompat then
+						if G.P_CENTERS[args[i]] and not unfusable(G.P_CENTERS[args[i]]) then
 							contents[#contents+1] = args[i]
 						end
 					end
@@ -1220,7 +1233,8 @@ if success and dpAPI.isVersionCompatible(0) then
 				G.jokers:emplace(new_card)
 				new_card:add_to_deck()
 				new_card:juice_up()
-				return "Fusion successful."
+				if not args[1] then return "Natural Fusion successful."
+				else return "Fusion successful." end
 			else return "Fusion failed.", "ERROR" end
 		end
 	})

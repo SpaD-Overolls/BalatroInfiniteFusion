@@ -11,7 +11,6 @@ pattern = 'self:set_ability(center, true)'
 match_indent = false
 payload = '''
 	if self.params.infinifusion then self.infinifusion = self.params.infinifusion end
-	if self.params.infus_editions then self.infus_editions = self.params.infus_editions end
 	if self.params.infus_api then
 		self.infinifusion_api = self.params.infus_api
 		self.infinifusion_api_checked = true

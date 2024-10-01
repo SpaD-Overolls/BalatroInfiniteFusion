@@ -109,6 +109,9 @@ SMODS.Joker {
 --
 ----------------------------
 
+-- /infuse
+-- -- -- Spawns a natural InfiniFusion (2 random Jokers)
+
 -- /infuse <InfiniFusion key>
 -- -- -- Spawns the InfiniFusion with this key
 
