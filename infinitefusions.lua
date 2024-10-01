@@ -19,7 +19,11 @@ SMODS.Joker {
 	omit = true,
 	rarity = 3,
 	set_ability = function(self, card, initial, delay_sprites)
-		if not card.infinifusion then card.infinifusion = {{key = 'j_joker'},{key = 'j_joker'}} end
+		local natural = nil
+		if not card.infinifusion then 
+			card.infinifusion = generate_random_infinifusion(2) 
+			natural = true
+		end
 		
 		if self.has_behaviour(card) then
 			local api = card.infinifusion_api
@@ -33,6 +37,7 @@ SMODS.Joker {
 			end
 		end
 		
+		if natural then card.ability.natural_infinifusion = true end
 		infinifusion_init_ability(card)
 		
 		if card.infus_editions then
@@ -57,6 +62,7 @@ SMODS.Joker {
 		return nil
 	end,
 	set_sprites = function(self, card, front)
+		if not card.infinifusion then return nil end
 		infinifusion_check_fusion(card)
 		local atlas = G.ASSET_ATLAS["Joker"]
 		local soul_atlas = G.ASSET_ATLAS["centers"]
@@ -289,6 +295,9 @@ SMODS.Joker {
 				fus.set_card_type_badge(fus, card, badges)
 			end
 		end
+		if card.ability_placeholder.natural_infinifusion then
+			badges[#badges+1] = create_badge(localize('k_rare'), G.C.RARITY[self.rarity], nil, 1.2)
+		end
 	end,
 	loc_vars = function(self, info_queue, card)
 		local loc_vars = infinifusion_loc_vars(card)
@@ -344,11 +353,9 @@ SMODS.Joker {
 		card.config.center = G.P_CENTERS['j_infus_fused']
 		return ret
 	end,
-	in_pool = function(self)
-		return false -- shouldnt naturally spawn
-	end,
 	inject = function(self)
 		G.P_CENTERS[self.key] = self -- bypass normal injection (to not create a G.CENTER_POOLS.Joker entry)
+		SMODS.insert_pool(G.P_JOKER_RARITY_POOLS[self.rarity], self)
 	end,
 }
 
@@ -436,6 +443,7 @@ function infinifusion_find_fusion(contents)
 end
 
 function infinifusion_check_fusion(card)
+	if not card.infinifusion then return nil end
 	if not card.infinifusion_api_checked then
 		local contents = {}
 		for i = 1, #card.infinifusion do
@@ -486,6 +494,46 @@ SMODS.Consumable {
 }
 
 -- other functions --
+function generate_random_infinifusion(num)
+	num = num or 2
+	if num < 2 then num = 2 end
+	local pool = {}
+	local final_ability = {}
+	for k, v in ipairs(G.P_CENTER_POOLS.Joker) do
+		if v.unlocked and not v.infinifusion then
+			local in_pool, pool_opts
+			local pool_flags = nil
+			local in_pool_exists, pool_flags_exist
+			
+			if v.in_pool and type(v.in_pool) == 'function' then
+				in_pool, pool_opts = v:in_pool()
+				in_pool_exists = true
+			end
+			
+			if v.no_pool_flag and G.GAME.pool_flags[v.no_pool_flag] then pool_flags = nil end
+			if v.yes_pool_flag and not G.GAME.pool_flags[v.yes_pool_flag] then pool_flags = nil end
+			if v.no_pool_flag or v.yes_pool_flag then pool_flags_exist = true end
+			
+			if in_pool or pool_flags or (not in_pool_exists and not pool_flags_exist) then
+				if not G.GAME.used_jokers[v.key] or (pool_opts and pool_opts.allow_duplicates) or next(SMODS.find_card('j_ring_master')) then
+					pool[#pool + 1] = v
+				end
+			end
+		end
+	end
+	
+	for i = 1, num do
+		final_ability[#final_ability+1] = {key = pseudorandom_element(pool, pseudoseed('fusion')).key}
+	end
+	
+	for k, v in pairs(final_ability) do
+		if not v.key then v.key = 'j_joker' end
+	end
+	
+	if #final_ability < 2 then return {{key = 'j_joker'}, {key = 'j_joker'}} end
+	
+	return final_ability
+end
 
 function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc_func, finalcalc_func)
 	context = context or {}
