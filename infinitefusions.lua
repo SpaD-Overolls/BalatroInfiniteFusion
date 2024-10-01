@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, humplydinkle]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.4
+--- VERSION: 0.0.5
 
 -- using a placeholder sprite by humplydinkle
 
@@ -17,7 +17,7 @@ SMODS.Joker {
 	pos = {x = 9, y = 9},
 	soul_pos = {x = 5, y = 3},
 	omit = true,
-	rarity = 'infinifusion',
+	rarity = 3,
 	set_ability = function(self, card, initial, delay_sprites)
 		if not card.infinifusion then card.infinifusion = {{key = 'j_joker'},{key = 'j_joker'}} end
 		
@@ -193,6 +193,7 @@ SMODS.Joker {
 			if api.add_to_deck and type(api.add_to_deck) == 'function' then
 				api.add_to_deck(self, card, from_debuff)
 			end
+			infinifusion_sync_ability(card)
 		end
 	end,
 	remove_from_deck = function(self, card, from_debuff)
@@ -207,6 +208,7 @@ SMODS.Joker {
 			if api.remove_from_deck and type(api.remove_from_deck) == 'function' then
 				api.remove_from_deck(self, card, from_debuff)
 			end
+			infinifusion_sync_ability(card)
 		end
 	end,
 	
@@ -249,9 +251,12 @@ SMODS.Joker {
 				if global_ret then return global_ret end
 			else
 				local api = card.infinifusion_api
+				local ret = nil
 				if api.calculate and type(api.calculate) == 'function' then
-					return api.calculate(self, card, context)
+					ret = api.calculate(self, card, context)
 				end
+				infinifusion_sync_ability(card)
+				return ret
 			end
 		end
 	end,
@@ -260,16 +265,19 @@ SMODS.Joker {
 		if not self.has_behaviour(card) then
 			local global_ret = 0
 			calculate_infinifusion(card, nil, function(i)
-				global_ret = global_ret + card:calculate_dollar_bonus()
+				global_ret = global_ret + (card:calculate_dollar_bonus() or 0)
 			end)
 			if global_ret ~= 0 then
 				return global_ret
 			end
 		else
 			local api = card.infinifusion_api
+			local ret = nil
 			if api.calc_dollar_bonus and type(api.calc_dollar_bonus) == 'function' then
-				return api.calc_dollar_bonus(self,card)
+				ret = api.calc_dollar_bonus(self,card)
 			end
+			infinifusion_sync_ability(card)
+			return ret
 		end
 	end,
 	
@@ -355,6 +363,7 @@ SMODS.InfiniFusion = SMODS.GameObject:extend {
 	obj_buffer = {},
 	set = 'InfiniFusion',
 	class_prefix = 'if',
+	discovered = false,
 	required_params = {
 		'key',
 		'contents' -- a table containing the keys of all jokers
@@ -507,21 +516,39 @@ function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc
 	if finalcalc_func and type(finalcalc_func) == 'function' then finalcalc_func(i) end
 end
 
-function infinifusion_sync_ability(card)
-	local keys = {'extra_value', 'perish_tally'}
-	for i = 0, #card.infinifusion do
-		local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
-		
-		if tbl then
-			for tbl_i = 1, #keys do
-				local tbl_k = keys[tbl_i]
-				
-				if card.ability[tbl_k] then
-					tbl[tbl_k] = type(card.ability[tbl_k]) == 'table' and copy_table(card.ability[tbl_k]) or card.ability[tbl_k]
+function infinifusion_sync_handle_value(card, keys, final_table)
+	for i = 1, #keys do
+		local k = keys[i]
+		for ii = 1, #card.infinifusion do
+			if card.infinifusion[ii].ability[k] then
+				if k == 'perish_tally' then
+					if not final_table[k] then final_table[k] = G.GAME.perishable_rounds end
+					final_table[k] = math.min(final_table[k] or G.GAME.perishable_rounds, card.infinifusion[ii].ability[k])
+				elseif type(card.infinifusion[ii].ability[k]) == 'boolean' and not card.infinifusion[ii].ability[k] == false then
+					final_table[k] = card.infinifusion[ii].ability[k]
+				else
+					if not final_table[k] then final_table[k] = 0 end
+					final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
 				end
 			end
 		end
 	end
+end
+
+function infinifusion_sync_ability(card)
+	local keys = {'extra_value', 'perish_tally'}
+	local final_table = {}
+	
+	infinifusion_sync_handle_value(card, keys, final_table)
+	
+	for k, v in pairs(final_table) do
+		card.ability_placeholder[k] = v
+	end
+	
+	G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
+		func = function()
+			card:set_cost()
+		return true; end})) 
 end
 
 function infinifusion_init_ability(card)
@@ -544,44 +571,16 @@ function infinifusion_init_ability(card)
 	local sticker_compats = {}
 	local final_sticker_compats = {}
 	local final_table = {}
-	local final_table_synced = {}
 	
 	for k, v in pairs(SMODS.Stickers) do
 		stickers[#stickers+1] = v.key
 	end
 	
-	for i = 1, #keys + #stickers do
-		k = keys[i] or stickers[i-#keys]
-		for ii = 1, #card.infinifusion do
-			if card.infinifusion[ii].ability[k] then
-				if k == 'perish_tally' then
-					if not final_table[k] then final_table[k] = G.GAME.perishable_rounds end
-					final_table[k] = math.min(final_table[k] or G.GAME.perishable_rounds, card.infinifusion[ii].ability[k])
-				elseif type(card.infinifusion[ii].ability[k]) == 'boolean' and not card.infinifusion[ii].ability[k] == false then
-					final_table[k] = card.infinifusion[ii].ability[k]
-				else
-					if card.infinifusion[ii].ability.infinifusion_init then
-						if not final_table_synced[k] then final_table_synced[k] = card.infinifusion[ii].ability[k] end
-					else
-						if not final_table[k] then final_table[k] = 0 end
-						final_table[k] = final_table[k] + card.infinifusion[ii].ability[k]
-					end
-				end
-			end
-		end
-	end
+	infinifusion_sync_handle_value(card, keys, final_table)
+	infinifusion_sync_handle_value(card, stickers, final_table)
 	
-	for k, v in pairs(final_table_synced) do
-		if not final_table[k] then final_table[k] = v 
-		else final_table[k] = final_table[k] + v end
-	end
-	
-	for i = 0, #card.infinifusion do
-		local tbl = i == 0 and card.ability_placeholder or card.infinifusion[i].ability
-		for k, v in pairs(final_table) do
-			tbl[k] = v
-		end
-		tbl.infinifusion_init = true
+	for k, v in pairs(final_table) do
+		card.ability_placeholder[k] = v
 	end
 	
 	for k, v in pairs(SMODS.Stickers) do
@@ -1086,6 +1085,24 @@ function Card:set_edition(edition, immediate, silent)
 end
 
 ------------------------
+-- Compat
+------------------------
+
+local game_init_item_prototypesRef = Game.init_item_prototypes
+function Game:init_item_prototypes()
+    local game_init_item_prototypes = game_init_item_prototypesRef(self)
+	
+	local incompatible_jokers = {}
+	for _, k in ipairs(incompatible_jokers) do
+		if G.P_CENTERS[k] then
+			G.P_CENTERS[k].infinifusion_incompat = true
+		end
+	end
+	
+	return game_init_item_prototypes
+end
+
+------------------------
 --   DebugPlus command
 ------------------------
 
@@ -1100,7 +1117,7 @@ local logger = {
 }
 
 if success and dpAPI.isVersionCompatible(0) then
-    local debugplus = dpAPI.registerID("Example")
+    local debugplus = dpAPI.registerID("InfiniteFusion")
     logger = debugplus.logger
 
     debugplus.addCommand({
