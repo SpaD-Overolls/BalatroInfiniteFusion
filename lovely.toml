@@ -1,7 +1,7 @@
 [manifest]
 version = "1.0.0"
 dump_lua = true
-priority = 1
+priority = 0
 
 [[patches]]
 [patches.pattern]
@@ -17,6 +17,38 @@ payload = '''
 		self.params.infus_api = nil
 	end
 '''
+
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+position = "after"
+pattern = 'self:set_ability(center, true)'
+match_indent = false
+payload = '''
+	if self.params.infus_old_ability then
+		self.ability = copy_table(self.params.infus_old_ability)
+		self.params.infus_old_ability = nil
+	end
+'''
+
+[[patches]]
+[patches.pattern]
+target = "card.lua"
+position = "before"
+pattern = 'if not G.OVERLAY_MENU then'
+match_indent = false
+payload = '''
+	if self.infinifusion and not G.OVERLAY_MENU then
+		for k,v in ipairs(self.infinifusion) do
+			if self.REMOVED then
+				if not next(SMODS.find_card(v.key, true)) then
+					G.GAME.used_jokers[v.key] = nil
+				end
+			else
+				G.GAME.used_jokers[v.key] = true
+			end
+		end
+	end'''
 
 [[patches]]
 [patches.pattern]

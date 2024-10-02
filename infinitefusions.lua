@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, humplydinkle]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.5
+--- VERSION: 0.0.6
 
 -- using a placeholder sprite by humplydinkle
 
@@ -105,7 +105,6 @@ SMODS.Joker {
 				
 				if card.infinifusion[i].key == 'j_wee' then wee = true end
 				if card.infinifusion[i].key == 'j_square' then square = true end
-				--if card.infinifusion[i].key == 'j_photograph' then photo = true end
 			end
 			
 			if same_check then
@@ -143,17 +142,17 @@ SMODS.Joker {
 					H = W
 				end
 				
-				card.T.h = H*scale
-				card.T.w = W*scale
-				
-				card.VT.h = card.T.h
-				card.VT.w = card.T.w
-				
 				-- TODO: Fix floating_sprite resize
 				-- square looks ok enough for me to not do this to it
 				if args.wee then
 					card.children.floating_sprite:set_sprite_pos({x = -2, y = -2})
 				end
+				
+				card.T.h = H*scale
+				card.T.w = W*scale
+				
+				card.VT.h = card.T.h
+				card.VT.w = card.T.w
 				
 				if args.same_check then
 					if args.square then
@@ -234,10 +233,27 @@ SMODS.Joker {
 				
 				if not context.joker_retrigger then -- fusion mustn't retrigger itself
 					calculate_infinifusion(card, nil, function(i)
+						-- cryptid doublescale compat
+						local original_cry_doublescale = nil
+						if Card.cry_double_scale_calc then
+							original_cry_doublescale = G.GAME.cry_double_scale[card.sort_id]
+							if not card.infinifusion[i].cry_double_scale then
+								G.GAME.cry_double_scale[card.sort_id] = nil
+							else
+								G.GAME.cry_double_scale[card.sort_id] = card.infinifusion[i].cry_double_scale
+							end
+						end
+						
 						local ret = card:calculate_joker(context)
 						-- sixth sense edgecase
 						if context.destroying_card and not context.blueprint then
 							global_ret = ret
+						end
+						
+						-- cryptid doublescale compat
+						if Card.cry_double_scale_calc then
+							card.infinifusion[i].cry_double_scale = G.GAME.cry_double_scale[card.sort_id]
+							G.GAME.cry_double_scale[card.sort_id] = original_cry_doublescale
 						end
 					end,
 					-- precalc_func
@@ -249,7 +265,7 @@ SMODS.Joker {
 							}
 						end
 					end,
-					-- postcalc_func and finalcalc_func
+					-- postcalc_func 
 					restore_func(i), restore_func(i))
 				end
 				
@@ -261,6 +277,25 @@ SMODS.Joker {
 					ret = api.calculate(self, card, context)
 				end
 				infinifusion_sync_ability(card)
+				
+				-- cryptid doublescale compat
+				calculate_infinifusion(card, nil, function(i)
+					local original_cry_doublescale = nil
+					if Card.cry_double_scale_calc then
+						original_cry_doublescale = G.GAME.cry_double_scale[card.sort_id]
+						if not card.infinifusion[i].cry_double_scale then
+							G.GAME.cry_double_scale[card.sort_id] = nil
+						else
+							G.GAME.cry_double_scale[card.sort_id] = card.infinifusion[i].cry_double_scale
+						end
+						
+						card:doublescale_scale_calc(orig_ability, in_context_scaling)
+						
+						card.infinifusion[i].cry_double_scale = G.GAME.cry_double_scale[card.sort_id]
+						G.GAME.cry_double_scale[card.sort_id] = original_cry_doublescale
+					end
+				end)
+			
 				return ret
 			end
 		end
@@ -356,6 +391,9 @@ SMODS.Joker {
 		G.P_CENTERS[self.key] = self -- bypass normal injection (to not create a G.CENTER_POOLS.Joker entry)
 		SMODS.insert_pool(G.P_JOKER_RARITY_POOLS[self.rarity], self)
 	end,
+	in_pool = function(self)
+		return true, {allow_duplicates = true}
+	end
 }
 
 -- [InfiniFusion API Object]
@@ -702,6 +740,7 @@ function infinifusion_loc_vars(card)
 			loc_vars.key = card.infinifusion[i].key == 'j_misprint' and 'j_misprint_static' or nil
 		end
 		
+		if not loc_vars or type(loc_vars) ~= 'table' then loc_vars = {} end
 		loc_vars.key = loc_vars.key or key
 		loc_vars.set = set
 		loc_vars.original_key = key
@@ -761,32 +800,36 @@ function create_infinifusion(args)
 	
 	-- checking compatibility with infinifusion
 	for i = 1, #contents do
-		--print("contents run")
+		-- if contents is a table
 		if type(contents[i]) == 'table' then
-			--print("contents run - table")
-			local card = contents[i]
-			if card.config.center.key == 'j_infus_fused' then
-				for ii = 1, #card.infinifusion do
-					infuse_tbl[#infuse_tbl + 1] = card.infinifusion[ii]
+			-- if contents is a card
+			if contents[i].config and contents[i].config.center then
+				local card = contents[i]
+				if card.config.center.key == 'j_infus_fused' then
+					for ii = 1, #card.infinifusion do
+						infuse_tbl[#infuse_tbl + 1] = card.infinifusion[ii]
+					end
+					cards[#cards+1] = card
+				elseif card.config.center.infinifusion and G.INFINIFUSIONS[card.config.center.infinifusion] then
+					local infinifusion = G.INFINIFUSIONS[card.config.center.infinifusion]
+					for ii = 1, #infinifusion.contents do
+						infuse_tbl[#infuse_tbl + 1] = {key = infinifusion.contents[ii]}
+					end
+					cards[#cards+1] = card
+				elseif not unfusable(card.config.center) then
+					infuse_tbl[#infuse_tbl + 1] = {
+						key = card.config.center.key,
+						ability = copy_table(card.ability)
+					}
+					cards[#cards+1] = card
 				end
-				cards[#cards+1] = card
-			elseif card.config.center.infinifusion and G.INFINIFUSIONS[card.config.center.infinifusion] then
-				local infinifusion = G.INFINIFUSIONS[card.config.center.infinifusion]
-				for ii = 1, #infinifusion.contents do
-					infuse_tbl[#infuse_tbl + 1] = {key = infinifusion.contents[ii]}
-				end
-				cards[#cards+1] = card
-			elseif not unfusable(card.config.center) then
-				infuse_tbl[#infuse_tbl + 1] = {
-					key = card.config.center.key,
-					ability = copy_table(card.ability)
-				}
-				cards[#cards+1] = card
+			-- if contents is infinifusion data
+			elseif contents[i].key and not unfusable(contents[i].key) then
+				infuse_tbl[#infuse_tbl + 1] = contents[i]
 			end
 		end
 		
 		if type(contents[i]) == 'string' and contents[i] ~= 'j_infus_fused' then
-			--print("contents run - string")
 			if G.P_CENTERS[contents[i]] and 
 			not unfusable(G.P_CENTERS[contents[i]]) then
 				infuse_tbl[#infuse_tbl + 1] = {key = contents[i]}
@@ -798,6 +841,8 @@ function create_infinifusion(args)
 		print("Not enough contents (infuse_tbl) - create_infinifusion")
 		return nil 
 	end
+	
+	if args.edition then editions[#editions+1] = args.edition end
 	
 	for i = 1, #cards do
 		editions[#editions+1] = cards[i].edition and copy_table(cards[i].edition)
@@ -835,6 +880,95 @@ function create_infinifusion(args)
 		infinifusion_init_ability(new_card)
 	end
 	return new_card
+end
+
+function split_infinifusion(card, args)
+	if not card then return {} end
+	if not card.infinifusion then return {} end
+	if not args then args = {total = true} end
+	local cards = {}
+	local new_tables = {}
+	
+	if args.total then
+		for i = 1, #card.infinifusion do
+			new_tables[#new_tables+1] = {card.infinifusion[i]}
+		end
+	elseif args.eject_key and type(args.eject_key) == 'string' then
+		-- TODO: rewrite this to be cleaner
+		local detected_keys = {}
+		new_tables[1] = {}
+		for i = 1, #card.infinifusion do
+			if card.infinifusion[i].key == args.eject_key then
+				detected_keys[i] = true
+			end
+		end
+		
+		local ejections_left = args.eject_amount or #detected_keys
+		if ejections_left > #detected_keys then ejections_left = #detected_keys end
+		
+		
+		
+	elseif args.equal then
+		local parts = 2
+		local part_size = 1
+		if type(args.equal) == 'number' and args.equal >= 2 then
+			parts = math.ceil(args.equal)
+		end
+		
+		part_size = math.ceil(#card.infinifusion/parts)
+		math.randomseed(pseudoseed('defusion'))
+		local shuffle = {}
+		for i = 1, #card.infinifusion do
+			local id = math.random(#card.infinifusion)
+			shuffle[#shuffle+1] = table.remove(card.infinifusion, id)
+		end
+		card.infinifusion = shuffle
+		
+		local cur_part = 1
+		for i = 1, #card.infinifusion do
+			if not new_tables[cur_part] then new_tables[cur_part] = {} end
+			
+			new_tables[cur_part][#new_tables[cur_part]+1] = card.infinifusion[i]
+			
+			if i % part_size == 0 then cur_part = cur_part + 1 end
+		end
+	end
+	
+	if #new_tables < 2 then return {} end
+	
+	for _, v in ipairs(new_tables) do
+		if #v == 1 then
+			local i = #cards+1
+			cards[i] = Card(
+			(card.T.x + card.T.w/2), 
+			card.T.y, 
+			G.CARD_W, G.CARD_H, nil, 
+			G.P_CENTERS[v[1].key],
+			{bypass_discovery_center = true,
+			infus_old_ability = v[1].ability})
+			
+			cards[i].edition = card.edition and copy_table(card.edition)
+		else
+			cards[#cards+1] = create_infinifusion({
+				contents = v,
+				edition = card.edition,
+				X = (card.T.x + card.T.w/2),
+				Y = card.T.y
+			})
+		end
+	end
+	
+	if not args.keep_old_card then
+		G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, blockable = false,
+		func = function()
+			card.area:remove_card(card)
+			card:remove_from_deck()
+			card:remove()
+			card = nil
+		return true; end})) 
+	end
+	
+	return cards
 end
 
 function infinifusion_vanilla_loc_var(self)
@@ -1175,12 +1309,12 @@ local logger = {
 if success and dpAPI.isVersionCompatible(0) then
     local debugplus = dpAPI.registerID("InfiniteFusion")
     logger = debugplus.logger
-
+	
     debugplus.addCommand({
 		name = "infuse",
 		source = "InfiniteFusion",
-		shortDesc = "Spawns an InfiniFusion",
-		desc = "Spawns an InfiniFusion using either an InfiniFusion key or a set of Joker keys.",
+		shortDesc = "Spawns an InfiniFusion.",
+		desc = "Spawns an InfiniFusion, can be specified using InfiniFusion keys, Joker keys and Joker slots.",
 		exec = function(args, rawArgs, dp)
 			if G.STAGE ~= G.STAGES.RUN then
 				return "This command must be run during a run.", "ERROR"
@@ -1195,7 +1329,13 @@ if success and dpAPI.isVersionCompatible(0) then
 					G.CARD_W, G.CARD_H, nil, 
 					G.P_CENTERS['j_infus_fused'],{bypass_discovery_center = true,})
 			elseif #args == 1 then
-				if not string.find(args[1], '^if_') or not G.INFINIFUSIONS[args[1]] then
+				if args[1] == 'all' then 
+					if #G.jokers.cards < 2 then return "Not enough Jokers to create a Fusion.", "ERROR" end
+					for k, v in ipairs(G.jokers.cards) do
+						if not unfusable(v) then contents[#contents+1] = v end
+					end
+					new_card = create_infinifusion({contents = contents})
+				elseif not string.find(args[1], '^if_') or not G.INFINIFUSIONS[args[1]] then
 					return "Invalid InfiniFusion key.", "ERROR"
 				else
 					new_card = create_infinifusion({key = args[1]})
@@ -1236,6 +1376,93 @@ if success and dpAPI.isVersionCompatible(0) then
 				if not args[1] then return "Natural Fusion successful."
 				else return "Fusion successful." end
 			else return "Fusion failed.", "ERROR" end
+		end
+	})
+	
+	local find_defuse_tar = function(t)
+		local card = nil
+		if not t then 
+			for i = 1, #G.jokers.cards do
+				if G.jokers.cards[i].infinifusion then
+					card = G.jokers.cards[i]
+					break
+				end
+			end
+		else
+			if G.jokers.cards[t] and G.jokers.cards[t].infinifusion then
+				card = G.jokers.cards[t]
+			end
+		end
+		return card
+	end
+	
+	debugplus.addCommand({
+		name = "defuse",
+		source = "InfiniteFusion",
+		shortDesc = "Splits an InfiniFusion.",
+		desc = "Splits the InfiniFusion in the specified Joker slot.",
+		exec = function(args, rawArgs, dp)
+			if G.STAGE ~= G.STAGES.RUN then
+				return "This command must be run during a run.", "ERROR"
+			end
+			local cards = {}
+			local card = nil
+			
+			if not args[1] then --/defuse
+				card = find_defuse_tar()
+				if card then 
+					cards = split_infinifusion(card)
+				else 
+					return "Fusion split failed - No valid targets.", "ERROR" 
+				end
+			end
+			
+			if args[1] then --/defuse <slot>
+				local id = tonumber(args[1])
+				if id and id <= #G.jokers.cards and id > 0 then
+					card = find_defuse_tar(id)
+					if card then 
+						cards = split_infinifusion(card)
+					else 
+						return "Fusion split failed - Invalid target.", "ERROR" 
+					end
+				else
+					if args[2] then
+						local id = tonumber(args[2])
+						if id and id <= #G.jokers.cards and id > 0 then
+							card = find_defuse_tar(id)
+							if not card then 
+								card = find_defuse_tar()
+								if not card then return "Fusion split failed - No valid targets.", "ERROR" end
+							end
+						end
+					else
+						card = find_defuse_tar()
+						if not card then return "Fusion split failed - No valid targets.", "ERROR" end
+					end
+					
+					if card then -- /defuse total or /defuse all
+						if args[1] == 'total' or args[1] == 'all' then
+							cards = split_infinifusion(card)
+						elseif (args[1] == 'key' or args[1] == 'eject') and false then
+							if args[3] then -- /defuse key <slot> <key> <amount>
+								cards = split_infinifusion(card, {eject_key = args[3], eject_amount = args[4] and tonumber(args[4])})
+							end
+						elseif args[1] == 'equal' then -- /defuse equal <amount>
+							cards = split_infinifusion(card, {equal = args[3] and tonumber(args[3]) or 2})
+						end
+					end
+				end
+			end
+			
+			if #cards > 1 then
+				for k, v in ipairs(cards) do
+					G.jokers:emplace(v)
+					v:add_to_deck()
+					v:juice_up()
+				end
+				return "Fusion split successfully."
+			else return "Fusion split failed - No cards could be split.", "ERROR" end
 		end
 	})
 end
