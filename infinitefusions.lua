@@ -97,7 +97,6 @@ SMODS.Joker {
 			local same_check = card.infinifusion[1].key
 			local wee = nil
 			local square = nil
-			--local photo = nil
 			for i = 1, #card.infinifusion do
 				if card.infinifusion[i].key ~= same_check then
 					same_check = nil
@@ -391,6 +390,63 @@ SMODS.Joker {
 		G.P_CENTERS[self.key] = self -- bypass normal injection (to not create a G.CENTER_POOLS.Joker entry)
 		SMODS.insert_pool(G.P_JOKER_RARITY_POOLS[self.rarity], self)
 	end,
+	can_use = function(self, card)
+		if not card.ability_placeholder.consumeable then return nil end
+		local can_use_fus = nil
+		-- TODO: write custom behavior api for this
+		calculate_infinifusion(card, nil, function(i)
+			card:update(dt) -- needed for certain consumeables
+			local _can_use = card:can_use_consumeable()
+			if _can_use then can_use_fus = true end
+			card.infinifusion[i].can_use = _can_use
+		end)
+		return can_use_fus
+	end,
+	use = function(self, card, area, copier)
+		if not card.ability_placeholder.consumeable then return nil end
+		local backup = G.GAME.last_tarot_planet
+		calculate_infinifusion(card, nil, function(i)
+			card.infinifusion[i].use_events = {}
+			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
+				card.ability = card.infinifusion[i].ability
+				card.config.center = G.P_CENTERS[card.infinifusion[i].key]
+				card:update(dt)
+				local sanity = card:can_use_consumeable(true, true)
+				card.config.center = G.P_CENTERS['j_infus_fused']
+				print(sanity)
+				if not sanity then
+					for k, v in pairs(card.infinifusion[i].use_events) do
+						v.func = function() return true end
+						v.delay = 0
+					end
+				end
+				
+				return true end }))
+			local place = #G.E_MANAGER.queues.base+1
+			card:use_consumeable(area, copier)
+			
+			card.infinifusion[i].use_events[i] = {}
+			for ii = place, #G.E_MANAGER.queues.base do
+				local iii = #card.infinifusion[i].use_events+1
+				card.infinifusion[i].use_events[iii] = G.E_MANAGER.queues.base[ii]
+			end
+		end, nil, nil,
+			function(i)
+				G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
+					card.ability = card.ability_placeholder
+					card.config.center = G.P_CENTERS['j_infus_fused']
+					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
+						--G.TAROT_INTERRUPT=nil
+						--G.CONTROLLER.locks.use = false
+						G.GAME.STOP_USE = 0
+						G.GAME.last_tarot_planet = backup
+						return true end }))
+					return true end }))
+			end)
+	end,
+	keep_on_use = function(self, card)
+		return nil
+	end,
 	in_pool = function(self)
 		return true, {allow_duplicates = true}
 	end
@@ -480,6 +536,7 @@ function infinifusion_find_fusion(contents)
 end
 
 function infinifusion_check_fusion(card)
+	if not card then return nil end
 	if not card.infinifusion then return nil end
 	if not card.infinifusion_api_checked then
 		local contents = {}
@@ -581,10 +638,10 @@ function calculate_infinifusion(card, context, calc_func, precalc_func, postcalc
 	
 	for i = 1, #card.infinifusion do
 		if precalc_func and type(precalc_func) == 'function' then precalc_func(i) end
-		card.ability = copy_table(card.infinifusion[i].ability)
+		card.ability = card.infinifusion[i].ability
 		card.config.center = G.P_CENTERS[card.infinifusion[i].key]
 		if calc_func and type(calc_func) == 'function' then calc_func(i) end
-		card.infinifusion[i].ability = copy_table(card.ability)
+		card.infinifusion[i].ability = card.ability
 		if postcalc_func and type(postcalc_func) == 'function' then postcalc_func(i) end
 	end
 	
@@ -721,9 +778,16 @@ function infinifusion_init_ability(card)
 	for i = 1, #card.infinifusion do
 		card.base_cost = card.base_cost + (G.P_CENTERS[card.infinifusion[i].key].cost or 1)
 	end
+	for i = 1, #card.infinifusion do
+		if card.infinifusion[i].ability.consumeable then 
+			card.ability_placeholder.consumeable = {max_highlighted = 5}
+			break
+		end
+	end
 end
 
 function infinifusion_loc_vars(card)
+	if not card then return nil end
 	local ret = {}
 	for i = 1, #card.infinifusion do
 		local key = card.infinifusion[i].key
@@ -1261,7 +1325,15 @@ function Card:set_edition(edition, immediate, silent)
 			self.edition = copy_table(self.infus_editions)
 		end
 	else
+		local restore_cons = nil
+		if self.infinifusion and self.ability.consumeable then
+			restore_cons = self.ability.consumeable 
+			self.ability.consumeable = nil
+		end
 		set_edition_ref(self, edition, immediate, silent)
+		if restore_cons then
+			self.ability.consumeable = restore_cons
+		end
 	end
 end
 
