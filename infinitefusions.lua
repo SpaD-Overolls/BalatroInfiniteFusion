@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, humplydinkle]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.6
+--- VERSION: 0.0.6b
 
 -- using a placeholder sprite by humplydinkle
 
