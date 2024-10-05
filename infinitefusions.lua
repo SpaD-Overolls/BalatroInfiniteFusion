@@ -405,15 +405,28 @@ SMODS.Joker {
 	use = function(self, card, area, copier)
 		if not card.ability_placeholder.consumeable then return nil end
 		local backup = G.GAME.last_tarot_planet
+		local highlighted = {}
+		for i = 1, #G.hand.highlighted do
+			highlighted[#highlighted+1] = G.hand.highlighted[i]
+		end
 		calculate_infinifusion(card, nil, function(i)
 			card.infinifusion[i].use_events = {}
 			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
 				card.ability = card.infinifusion[i].ability
 				card.config.center = G.P_CENTERS[card.infinifusion[i].key]
+				if #highlighted ~= 0 then
+					G.hand.highlighted = {}
+					for _, v in pairs(highlighted) do
+						v.highlighted = true
+						G.hand.highlighted[#G.hand.highlighted+1] = v
+					end
+				end
 				card:update(dt)
+				local _state = G.STATE
+				G.STATE = G.STATES.SELECTING_HAND
 				local sanity = card:can_use_consumeable(true, true)
+				G.STATE = _state
 				card.config.center = G.P_CENTERS['j_infus_fused']
-				print(sanity)
 				if not sanity then
 					for k, v in pairs(card.infinifusion[i].use_events) do
 						v.func = function() return true end
@@ -424,6 +437,7 @@ SMODS.Joker {
 				return true end }))
 			local place = #G.E_MANAGER.queues.base+1
 			card:use_consumeable(area, copier)
+			delay(0.2)
 			
 			card.infinifusion[i].use_events[i] = {}
 			for ii = place, #G.E_MANAGER.queues.base do
@@ -436,8 +450,6 @@ SMODS.Joker {
 					card.ability = card.ability_placeholder
 					card.config.center = G.P_CENTERS['j_infus_fused']
 					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
-						--G.TAROT_INTERRUPT=nil
-						--G.CONTROLLER.locks.use = false
 						G.GAME.STOP_USE = 0
 						G.GAME.last_tarot_planet = backup
 						return true end }))
