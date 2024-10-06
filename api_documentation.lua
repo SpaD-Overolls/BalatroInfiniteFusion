@@ -106,6 +106,10 @@ SMODS.InfiniFusion {
 	
 	keep_on_use = function(self, card)
 		-- same as SMODS.Consumable
+	end,
+	
+	redeem = function(self)
+		-- same as SMODS.Voucher
 	end
 	
 }
