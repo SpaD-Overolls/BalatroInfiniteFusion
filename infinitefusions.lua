@@ -44,6 +44,15 @@ SMODS.Joker {
 		if natural then card.ability.natural_infinifusion = true end
 		infinifusion_init_ability(card)
 		
+		if card.infinifusion_api and card.ability_placeholder then
+			local api = card.infinifusion_api
+			if card.ability_placeholder.consumeable and api.no_use then
+				card.ability_placeholder.consumeable = nil
+			elseif (api.use and type(api.use) == 'function') and not api.no_use then
+				card.ability_placeholder.consumeable = {}
+			end
+		end
+		
 		card.config.center = G.P_CENTERS['j_infus_fused']
 		self.set_sprites(self, card, front)
 	end,
@@ -57,6 +66,10 @@ SMODS.Joker {
 			if api.add_to_deck and type(api.add_to_deck) == 'function' then return true end
 			if api.remove_from_deck and type(api.remove_from_deck) == 'function' then return true end
 			if api.calc_dollar_bonus and type(api.calc_dollar_bonus) == 'function' then return true end
+			
+			if api.can_use and type(api.can_use) == 'function' then return true end
+			if api.use and type(api.use) == 'function' then return true end
+			if api.keep_on_use and type(api.keep_on_use) == 'function' then return true end
 		end
 		return nil
 	end,
@@ -107,7 +120,7 @@ SMODS.Joker {
 			end
 			
 			if same_check then
-				atlas = G.ASSET_ATLAS[G.P_CENTERS[same_check]] or G.ASSET_ATLAS["Joker"]
+				atlas = G.ASSET_ATLAS[G.P_CENTERS[same_check].atlas] or G.ASSET_ATLAS["Joker"]
 				soul_atlas = atlas
 				pos = G.P_CENTERS[same_check].pos or {x = 0, y = 0}
 				soul_pos = G.P_CENTERS[same_check].soul_pos or {x = -2, y = -2}
@@ -216,6 +229,11 @@ SMODS.Joker {
 	end,
 	
 	update = function(self, card, dt)
+		if card.infinifusion_api then
+			if card.infinifusion_api.update and type(card.infinifusion_api.update) then
+				card.infinifusion_api.update(self, card, dt)
+			end
+		end
 	end,
 	
 	calculate = function(self, card, context)
@@ -394,15 +412,24 @@ SMODS.Joker {
 	can_use = function(self, card)
 		if not card.ability_placeholder.consumeable then return nil end
 		local can_use_fus = nil
-		-- TODO: write custom behavior api for this
-		calculate_infinifusion(card, nil, function(i)
-			if card.infinifusion[i].ability.consumeable then
-				card:update() -- needed for certain consumeables
-				local _can_use = card:can_use_consumeable()
-				if _can_use then can_use_fus = true end
-				card.infinifusion[i].can_use = _can_use
+		
+		if not self.has_behaviour(card) then
+			calculate_infinifusion(card, nil, function(i)
+				if card.infinifusion[i].ability.consumeable then
+					card:update() -- needed for certain consumeables
+					local _can_use = card:can_use_consumeable()
+					if _can_use then can_use_fus = true end
+					card.infinifusion[i].can_use = _can_use
+				end
+			end)
+		else
+			local api = card.infinifusion_api
+			if (api.can_use and type(api.can_use) == 'function') and (api.use and type(api.use) == 'function') then
+				can_use_fus = api.can_use(self, card)
+			elseif api.use and type(api.use) == 'function' then 
+				can_use_fus = true
 			end
-		end)
+		end
 		return can_use_fus
 	end,
 	use = function(self, card, area, copier)
@@ -412,60 +439,95 @@ SMODS.Joker {
 		for i = 1, #G.hand.highlighted do
 			highlighted[#highlighted+1] = G.hand.highlighted[i]
 		end
-		calculate_infinifusion(card, nil, function(i)
-			card.infinifusion[i].use_events = {}
-			if card.infinifusion[i].ability.consumeable then
-				G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
-					card.ability = card.infinifusion[i].ability
-					card.config.center = G.P_CENTERS[card.infinifusion[i].key]
-					if #highlighted ~= 0 then
-						G.hand.highlighted = {}
-						for _, v in pairs(highlighted) do
-							v.highlighted = true
-							G.hand.highlighted[#G.hand.highlighted+1] = v
-						end
-					end
-					card:update()
-					local _state = G.STATE
-					G.STATE = G.STATES.SELECTING_HAND
-					local sanity = card:can_use_consumeable(true, true)
-					G.STATE = _state
-					card.config.center = G.P_CENTERS['j_infus_fused']
-					if not sanity then
-						for k, v in pairs(card.infinifusion[i].use_events) do
-							v.func = function() return true end
-							v.delay = 0
-						end
-					end
-					
-					return true end }))
-				local place = #G.E_MANAGER.queues.base+1
-				card:use_consumeable(area, copier)
-				delay(0.1)
-				
-				card.infinifusion[i].use_events[i] = {}
-				for ii = place, #G.E_MANAGER.queues.base do
-					local iii = #card.infinifusion[i].use_events+1
-					card.infinifusion[i].use_events[iii] = G.E_MANAGER.queues.base[ii]
-				end
-			end
-		end, nil, nil,
-			function(i)
-				G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
-					card.ability = card.ability_placeholder
-					card.config.center = G.P_CENTERS['j_infus_fused']
-					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
-						G.GAME.STOP_USE = 0
-						G.GAME.last_tarot_planet = backup
+		
+		if not self.has_behaviour(card) then
+		
+			calculate_infinifusion(card, nil, function(i)
+				card.infinifusion[i].use_events = {}
+				if card.infinifusion[i].ability.consumeable then
+					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
+						card.ability = card.infinifusion[i].ability
+						card.config.center = G.P_CENTERS[card.infinifusion[i].key]
 						if #highlighted ~= 0 then
-							G.hand:unhighlight_all()
+							G.hand.highlighted = {}
+							for _, v in pairs(highlighted) do
+								v.highlighted = true
+								G.hand.highlighted[#G.hand.highlighted+1] = v
+							end
 						end
+						card:update()
+						local _state = G.STATE
+						G.STATE = G.STATES.SELECTING_HAND
+						local sanity = card:can_use_consumeable(true, true)
+						G.STATE = _state
+						card.config.center = G.P_CENTERS['j_infus_fused']
+						if not sanity then
+							for k, v in pairs(card.infinifusion[i].use_events) do
+								v.func = function() return true end
+								v.delay = 0
+							end
+						end
+						
 						return true end }))
-					return true end }))
-			end)
+					local place = #G.E_MANAGER.queues.base+1
+					card:use_consumeable(area, copier)
+					delay(0.1)
+					
+					card.infinifusion[i].use_events[i] = {}
+					for ii = place, #G.E_MANAGER.queues.base do
+						local iii = #card.infinifusion[i].use_events+1
+						card.infinifusion[i].use_events[iii] = G.E_MANAGER.queues.base[ii]
+					end
+				end
+			end, nil, nil,
+				function(i)
+					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
+						card.ability = card.ability_placeholder
+						card.config.center = G.P_CENTERS['j_infus_fused']
+						G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
+							G.GAME.STOP_USE = 0
+							G.GAME.last_tarot_planet = backup
+							if #highlighted ~= 0 then
+								G.hand:unhighlight_all()
+							end
+							return true end }))
+						return true end }))
+				end)
+		
+		else
+			local api = card.infinifusion_api
+			if api.use and type(api.use) == 'function' then 
+				api.use(self, card, area, copier)
+			end
+			
+		end
 	end,
 	keep_on_use = function(self, card)
-		return nil
+		if not card.ability_placeholder.consumeable then return nil end
+		local keep_on_use = true
+		if not self.has_behaviour(card) then
+			
+			calculate_infinifusion(card, nil, function(i)
+				if card.infinifusion[i].ability.consumeable and keep_on_use then
+					if not card.config.center.keep_on_use or type(card.config.center.keep_on_use) ~= 'function' then
+						keep_on_use = nil
+					else
+						local check = card.config.center.keep_on_use(card.config.center, card)
+						if not check then keep_on_use = nil end
+					end
+				end
+			end)
+			
+		else
+			local api = card.infinifusion_api
+			if api.keep_on_use and type(api.keep_on_use) == 'function' then 
+				keep_on_use = api.keep_on_use(self, card)
+			else
+				return nil
+			end
+		end
+		
+		return keep_on_use
 	end,
 	in_pool = function(self)
 		return true, {allow_duplicates = true}
@@ -800,7 +862,7 @@ function infinifusion_init_ability(card)
 	end
 	for i = 1, #card.infinifusion do
 		if card.infinifusion[i].ability.consumeable then 
-			card.ability_placeholder.consumeable = {max_highlighted = 5}
+			card.ability_placeholder.consumeable = {}
 			break
 		end
 	end

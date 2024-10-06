@@ -15,7 +15,7 @@ SMODS.InfiniFusion {
 	soul_pos = {x = 1, y = 0},-- if fusion doesn't have soul_atlas or soul_pos, then it hides the floating sprite
 	
 	set_sprites = function(self, card, front)
-		-- exactly the same as SMODS.Center counterpart
+		-- exactly the same as SMODS.Center
 	end,
 	
 	no_info_queue = nil, -- set to true if you want to hide the subjoker info_queue
@@ -44,7 +44,11 @@ SMODS.InfiniFusion {
 	end,
 	
 	set_card_type_badge = function(self, card, badges)
-		-- exactly the same as SMODS.Center counterpart
+		-- exactly the same as SMODS.Center
+	end,
+	
+	update = function(self, card, dt)
+		-- exactly the same as SMODS.Center
 	end,
 	
 	-- set this to true if you don't want
@@ -52,6 +56,9 @@ SMODS.InfiniFusion {
 	-- of this fusion
 	disable_find_card = nil,
 	
+	-- set this to true to disable the use button
+	-- for fusions that would otherwise have a use button
+	no_use = nil,
 	
 	-----------------------------------------------------
 	--	BEHAVIOUR CHANGES
@@ -86,7 +93,21 @@ SMODS.InfiniFusion {
 	
 	calc_dollar_bonus = function(self, card)
 		-- same as SMODS.Joker
+	end,
+	
+	-- NOTICE: setting any of these will add a Use button to your InfiniFusion
+	use = function(self, card, area, copier)
+		-- same as SMODS.Consumable
+	end,
+	
+	can_use = function(self, card)
+		-- same as SMODS.Consumable
+	end,
+	
+	keep_on_use = function(self, card)
+		-- same as SMODS.Consumable
 	end
+	
 }
 
 -- New features for SMODS.Joker
@@ -110,10 +131,13 @@ SMODS.Joker {
 ----------------------------
 
 -- /infuse
--- -- -- Spawns a natural InfiniFusion (2 random Jokers)
+-- -- -- Spawn a natural InfiniFusion (2 random Jokers)
+
+-- /infuse all
+-- -- -- Fuse all currently owned Jokers.
 
 -- /infuse <InfiniFusion key>
--- -- -- Spawns the InfiniFusion with this key
+-- -- -- Spawn the InfiniFusion with this key
 
 -- /infuse <argument> <argument>
 -- -- -- Fuse the Jokers from specified arguments
@@ -122,12 +146,15 @@ SMODS.Joker {
 -- -- -- -- Valid arguments:
 -- -- -- -- -- InfiniFusion key
 -- -- -- -- (for example if_fuze_collector)
--- -- -- Adds the contents of this InfiniFusion into the contents of the created InfiniFusion
+-- -- -- Add the contents of this InfiniFusion into the contents of the created InfiniFusion
 -- -- --
 -- -- -- -- -- Joker key
 -- -- -- -- (for example j_joker)
--- -- -- Adds this Joker into the contents of the created InfiniFusion
+-- -- -- Add this Joker into the contents of the created InfiniFusion
 -- -- --
 -- -- -- -- -- Numbers
--- -- -- Adds the Joker from the corresponding Joker slot into the contents of the created InfiniFusion
+-- -- -- Add the Joker from the corresponding Joker slot into the contents of the created InfiniFusion
 -- -- -- (The Joker specified this way will be fused into the resulting InfiniFusion, removing the original copy)
+
+-- /defuse
+-- -- -- Split the leftmost InfiniFusion into its components
