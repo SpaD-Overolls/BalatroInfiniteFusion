@@ -382,6 +382,7 @@ SMODS.Joker {
 			calculate_infinifusion(card, nil, function(i)
 				card.infinifusion[i].use_events = {}
 				if card.infinifusion[i].ability.consumeable or card.infinifusion[i].ability.set == 'Voucher' then
+				
 					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
 						card.ability = card.infinifusion[i].ability
 						card.config.center = G.P_CENTERS[card.infinifusion[i].key]
@@ -411,9 +412,11 @@ SMODS.Joker {
 						
 						return true end }))
 					local place = #G.E_MANAGER.queues.base+1
+					
 					if card.infinifusion[i].ability.consumeable then
 						card:use_consumeable(area, copier)
 					elseif card.infinifusion[i].ability.set == 'Voucher' then
+						G.GAME.used_vouchers[card.infinifusion[i].key] = true
 						infinifusion_pseudoredeem(G.P_CENTERS[card.infinifusion[i].key], card)
 					end
 					delay(0.1)
@@ -432,7 +435,8 @@ SMODS.Joker {
 						G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
 							G.GAME.STOP_USE = 0
 							G.GAME.last_tarot_planet = backup
-							if #highlighted ~= 0 then
+							-- G.GAME.USING_CODE is cryptid code card compat
+							if #highlighted ~= 0 and not G.GAME.USING_CODE then
 								G.hand:unhighlight_all()
 							end
 							return true end }))
