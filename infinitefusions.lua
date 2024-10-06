@@ -4,7 +4,7 @@
 --- MOD_AUTHOR: [SpaD_Overolls, humplydinkle]
 --- MOD_DESCRIPTION: Fuse any Jokers!
 --- PREFIX: infus
---- VERSION: 0.0.6b
+--- VERSION: 0.0.6
 
 -- using a placeholder sprite by humplydinkle
 
@@ -243,6 +243,7 @@ SMODS.Joker {
 							end
 						end
 						
+						card:update()
 						local ret = card:calculate_joker(context)
 						-- sixth sense edgecase
 						if context.destroying_card and not context.blueprint then
@@ -395,10 +396,12 @@ SMODS.Joker {
 		local can_use_fus = nil
 		-- TODO: write custom behavior api for this
 		calculate_infinifusion(card, nil, function(i)
-			card:update(dt) -- needed for certain consumeables
-			local _can_use = card:can_use_consumeable()
-			if _can_use then can_use_fus = true end
-			card.infinifusion[i].can_use = _can_use
+			if card.infinifusion[i].ability.consumeable then
+				card:update() -- needed for certain consumeables
+				local _can_use = card:can_use_consumeable()
+				if _can_use then can_use_fus = true end
+				card.infinifusion[i].can_use = _can_use
+			end
 		end)
 		return can_use_fus
 	end,
@@ -411,38 +414,40 @@ SMODS.Joker {
 		end
 		calculate_infinifusion(card, nil, function(i)
 			card.infinifusion[i].use_events = {}
-			G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
-				card.ability = card.infinifusion[i].ability
-				card.config.center = G.P_CENTERS[card.infinifusion[i].key]
-				if #highlighted ~= 0 then
-					G.hand.highlighted = {}
-					for _, v in pairs(highlighted) do
-						v.highlighted = true
-						G.hand.highlighted[#G.hand.highlighted+1] = v
+			if card.infinifusion[i].ability.consumeable then
+				G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0, func = function()
+					card.ability = card.infinifusion[i].ability
+					card.config.center = G.P_CENTERS[card.infinifusion[i].key]
+					if #highlighted ~= 0 then
+						G.hand.highlighted = {}
+						for _, v in pairs(highlighted) do
+							v.highlighted = true
+							G.hand.highlighted[#G.hand.highlighted+1] = v
+						end
 					end
-				end
-				card:update(dt)
-				local _state = G.STATE
-				G.STATE = G.STATES.SELECTING_HAND
-				local sanity = card:can_use_consumeable(true, true)
-				G.STATE = _state
-				card.config.center = G.P_CENTERS['j_infus_fused']
-				if not sanity then
-					for k, v in pairs(card.infinifusion[i].use_events) do
-						v.func = function() return true end
-						v.delay = 0
+					card:update()
+					local _state = G.STATE
+					G.STATE = G.STATES.SELECTING_HAND
+					local sanity = card:can_use_consumeable(true, true)
+					G.STATE = _state
+					card.config.center = G.P_CENTERS['j_infus_fused']
+					if not sanity then
+						for k, v in pairs(card.infinifusion[i].use_events) do
+							v.func = function() return true end
+							v.delay = 0
+						end
 					end
-				end
+					
+					return true end }))
+				local place = #G.E_MANAGER.queues.base+1
+				card:use_consumeable(area, copier)
+				delay(0.1)
 				
-				return true end }))
-			local place = #G.E_MANAGER.queues.base+1
-			card:use_consumeable(area, copier)
-			delay(0.2)
-			
-			card.infinifusion[i].use_events[i] = {}
-			for ii = place, #G.E_MANAGER.queues.base do
-				local iii = #card.infinifusion[i].use_events+1
-				card.infinifusion[i].use_events[iii] = G.E_MANAGER.queues.base[ii]
+				card.infinifusion[i].use_events[i] = {}
+				for ii = place, #G.E_MANAGER.queues.base do
+					local iii = #card.infinifusion[i].use_events+1
+					card.infinifusion[i].use_events[iii] = G.E_MANAGER.queues.base[ii]
+				end
 			end
 		end, nil, nil,
 			function(i)
@@ -452,6 +457,9 @@ SMODS.Joker {
 					G.E_MANAGER:add_event(Event({trigger = 'after', delay = 0.1, func = function()
 						G.GAME.STOP_USE = 0
 						G.GAME.last_tarot_planet = backup
+						if #highlighted ~= 0 then
+							G.hand:unhighlight_all()
+						end
 						return true end }))
 					return true end }))
 			end)
@@ -820,6 +828,9 @@ function infinifusion_loc_vars(card)
 		loc_vars.key = loc_vars.key or key
 		loc_vars.set = set
 		loc_vars.original_key = key
+		loc_vars.vars = loc_vars.vars or {}
+		loc_vars.vars.infus_override = true
+		loc_vars.vars.cfg = card.infinifusion[i].ability
 		ret[#ret+1] = loc_vars
 	end
 	return ret
@@ -1240,6 +1251,69 @@ function infinifusion_vanilla_loc_var(self)
 	elseif self.key == 'j_yorick' then
 		return {self.ability.extra.xmult, self.ability.extra.discards, self.ability.yorick_discards, self.ability.x_mult}
 	
+	
+	-- SPECTRALS
+	elseif self.key == 'c_immolate' then
+		return {self.ability.extra.destroy, self.ability.extra.dollars}
+	
+	elseif self.key == 'c_ectoplasm' then
+		return {G.GAME.ecto_minus or 1}
+	
+	-- PLANETS
+	elseif G.P_CENTERS[self.key] and G.P_CENTERS[self.key].set == 'Planet' then
+		local config = self.ability.consumeable
+		return {
+			G.GAME.hands[config.hand_type].level,localize(config.hand_type, 'poker_hands'), G.GAME.hands[config.hand_type].l_mult, G.GAME.hands[config.hand_type].l_chips,
+			colours = {(G.GAME.hands[config.hand_type].level==1 and G.C.UI.TEXT_DARK or G.C.HAND_LEVELS[math.min(7, G.GAME.hands[config.hand_type].level)])}
+        }
+	
+	-- TAROTS
+	elseif self.key == 'c_fool' then
+		return {G.GAME.last_tarot_planet and G.P_CENTERS[G.GAME.last_tarot_planet] or nil}
+	
+	elseif self.key == 'c_magician' or self.key == 'c_empress' or self.key == 'c_lovers' 
+	or self.key == 'c_heirophant' or self.key == 'c_chariot' or self.key == 'c_justice'
+	or self.key == 'c_tower' or self.key == 'c_devil' then
+		local config = self.ability.consumeable
+		return {config.max_highlighted, localize{type = 'name_text', set = 'Enhanced', key = config.mod_conv}}
+	
+	elseif self.key == 'c_death' or self.key == 'c_hanged_man' or self.key == 'c_strength' then
+		local config = self.ability.consumeable
+		return {config.max_highlighted}
+	
+	elseif self.key == 'c_temperance' then
+		local config = self.ability.consumeable
+		local _money = 0
+		if G.jokers then
+			for i = 1, #G.jokers.cards do
+				if G.jokers.cards[i].ability.set == 'Joker' then
+					_money = _money + G.jokers.cards[i].sell_cost
+				end
+			end
+		end
+		return {config.extra, math.min(config.extra, _money)}
+	
+	elseif self.key == 'c_emperor' then
+		local config = self.ability.consumeable
+		return {config.tarots}
+		
+	elseif self.key == 'c_high_priestess' then
+		local config = self.ability.consumeable
+		return {config.planets}
+	
+	elseif self.key == 'c_hermit' then
+		local config = self.ability.consumeable
+		return {config.extra}
+		
+	elseif self.key == 'c_wheel_of_fortune' then
+		local config = self.ability.consumeable
+		return {G.GAME.probabilities.normal, config.extra}
+	
+	elseif self.key == 'c_star' or self.key == 'c_moon'
+	or self.key == 'c_sun' or self.key == 'c_world' then
+		local config = self.ability.consumeable
+		return {config.max_highlighted, localize(config.suit_conv, 'suits_plural'), colours = {G.C.SUITS[config.suit_conv]}}
+		
 	end
 	
 	return {self.ability.extra and self.ability.extra or nil}

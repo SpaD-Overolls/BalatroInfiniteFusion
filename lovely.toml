@@ -1,7 +1,7 @@
 [manifest]
 version = "1.0.0"
 dump_lua = true
-priority = 0
+priority = 2
 
 [[patches]]
 [patches.pattern]
@@ -71,3 +71,18 @@ pattern = "(self.ability.set == 'Joker' and {G.C.RARITY[self.config.center.rarit
 match_indent = false
 payload = "self.infinifusion and {InfiniteFusion.badge_colour} or"
 
+[[patches]]
+[patches.pattern]
+target = "functions/common_events.lua"
+position = "before"
+pattern = "localize{type = 'descriptions', key = _c.key, set = _c.set, nodes = desc_nodes, vars = loc_vars}"
+match_indent = true
+payload = "if specific_vars and specific_vars.infus_override then loc_vars = specific_vars end"
+
+[[patches]]
+[patches.pattern]
+target = "functions/common_events.lua"
+position = "after"
+pattern = "local cfg = (card and card.ability) or _c['config']"
+match_indent = true
+payload = "if specific_vars and specific_vars.cfg then cfg = specific_vars.cfg end"
